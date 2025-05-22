@@ -46,8 +46,6 @@ maled <- read.csv("https://raw.githubusercontent.com/blopman/epi569/master/maled
 #View(maled2023)
 ```
 
-## We are going to estimate several measures of diarrhea burden
-
 ## 1. Estimate the incidence of diarrhea per child year (i.e., \# incident cases/total person-years in a given period) \[3pts\]
 
 ### 1a. in the first year of life (days 0-365) among males
@@ -67,7 +65,7 @@ yr1bysex <- maled %>%
 
 ```{r}
 
-## add your code here, change above code to match time periods
+##change above code to match time periods
 yr1bysex <- maled %>% 
   filter(age<=365 & female==1) %>% 
   summarize(cases=sum(incidentdiarrhea),
@@ -82,7 +80,7 @@ yr1bysex <- maled %>%
 
 ```{r}
 
-## add your code here
+##code here
 yr1bysex <- maled %>% 
   filter(age>=365) %>% 
   summarize(cases=sum(incidentdiarrhea),
@@ -113,7 +111,7 @@ longprev <- maled %>%
 
 ```{r}
 
-## add your code here, use above code but change time period
+##use above code but change time period
 longprev <- maled %>% 
   filter(age >= 183 & age <=189) %>%
   summarize(longprevalence = sum(diarrhea)/n())
@@ -126,7 +124,7 @@ longprev <- maled %>%
 
 ```{r}
 
-## add your code here
+##code here
 longprev <- maled %>% 
   filter(age >= 365 & age <=371) %>%
   summarize(longprevalence = sum(diarrhea)/n())
@@ -158,7 +156,7 @@ periodprev <- maled %>%
 
 ```{r}
 
-## add your code here, above code but change time
+##above code but change time
 periodprev <- maled %>% 
   group_by(pid) %>% 
   filter (age>=183 & age<=189) %>%
@@ -174,7 +172,7 @@ periodprev <- maled %>%
 
 ```{r}
 
-## add your code here
+##code here
 periodprev <- maled %>% 
   group_by(pid) %>% 
   filter (age>=183 & age<=196) %>%
@@ -190,7 +188,7 @@ periodprev <- maled %>%
 
 **ANSWER: The time period affects the period prevalence such that the longer the time period, the greater the period prevalence. This makes sense as we'll get more cases with more time. We are able to capture more cases in more time. The opposite is thus true as well (decreasing time period decreases the period prevalence).**
 
-## Now, we'll manipulate the data so there is one row per child and add several summary variables
+## Now, manipulate the data so there is one row per child and add several summary variables
 
 -   **logpersontime:** log(total days child was observed in the first 2 years of life)
 
@@ -233,7 +231,7 @@ irr <- as.data.frame(cbind(exp(coef(m1)),exp(confint(m1))))
 
 ```{r}
 
-## add your code here
+##code here
 m2 <- glm(anydiarrhea ~ female + as.factor(Country_ID), family = binomial(link="logit"), data = wide)
 summary(m2)
 
