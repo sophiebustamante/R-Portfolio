@@ -1,6 +1,6 @@
 ---
 title: "EPI 569 -- Exercise 3: Diagnostics and Seroepidemiology"
-author: "Ben Lopman, Liz Rogawski McQuade, Seth Zissette"
+author: "Sophie Bustamante"
 format: html
 editor: visual
 widescreen: true
