@@ -1,0 +1,2695 @@
+---
+title: "HSV-2 Prophylactic Vaccine Intervention Model"
+author: "STI Group"
+format: html
+editor: visual
+---
+
+## HSV-2: Disease and All or Nothing Vaccine Model
+
+```{r, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, tidy = TRUE, tidy.opts = list(width.cutoff = 80))
+library(EpiModel)
+```
+
+```{r}
+knitr::include_graphics("hsv2.png")
+```
+
+## Model Differential Equations
+
+$$
+\begin{align*}
+\frac{dS(t)}{dt} & = -\lambda(t)S(t) - p_{2}\chi S(t) + (1-p_{1}\chi)\mu N - \kappa S(t)
+\\
+\frac{dI_{1}(t)}{dt} & = \lambda(t)S(t) - \gamma_{1} I_{1}(t) - \kappa I_{1}(t)
+\\
+\frac{dI_{2}(t)}{dt} & = \sigma L(t) - \gamma_{2} I_{2}(t) - \kappa I_{2}(t)
+\\
+\frac{dL(t)}{dt} & = \gamma_{1} I_{1}(t) + \gamma_{2} I_{2}(t) - \sigma L(t) - \kappa L(t)
+\\
+\frac{dV(t)}{dt} & = p_{1}\chi\mu N + p_{2}\chi S(t) - \kappa V(t)
+\\
+\end{align*}
+$$
+
+## Initial Model
+
+```{r}
+# Model function 
+hsv2AoN <- function(t, t0, parms) {
+with(as.list(c(t0, parms)), {
+
+# 1. Track the total population size
+  num <- s.num + i1.num + i2.num + l.num + v.num
+  
+# 2. Define lambda and derived values
+  lambda <- (tau*c) * ((i1.num + i2.num)/num) 
+  gamma_1 <- 1/i1.dur
+  gamma_2 <- 1/i2.dur
+  sigma <- 1/l.dur
+  
+# 3. Write four differential equations
+  
+  dS <- (-lambda*s.num) - (p_2*chi*s.num) + ((1 - p_1*chi)*mu*num) - (kappa*s.num)
+
+  dI1 <- (lambda*s.num) - (gamma_1*i1.num) - (kappa*i1.num)
+
+  dI2 <- (sigma*l.num) - (gamma_2*i2.num) - (kappa*i2.num)
+
+  dL <- (gamma_1*i1.num) + (gamma_2*i2.num) - (sigma*l.num) - (kappa*l.num)
+
+  dV <- (p_1*chi*mu*num) + (p_2*chi*s.num) - (kappa*v.num)
+    
+# 4. Outputs
+  list(c(dS, dI1, dI2, dL, dV,
+         si1.flow = lambda*s.num,
+         si2.flow = sigma*l.num,
+         sl.flow = gamma_1*i1.num + gamma_2*i2.num,
+         v.flow = p_1*chi*mu*num + p_2*chi*s.num
+))
+})
+}
+
+# 5. Inputs
+param <- param.dcm(mu = 0.029/365,
+                   p_1 = 0,
+                   p_2 = 0,
+                   chi = 0,
+                   kappa = 0.029/365,
+                   tau = 0.01, 
+                   c = 120/365, 
+                   i1.dur = 20,
+                   i2.dur = 4.4,
+                   l.dur = 19.8)
+
+init <- init.dcm(
+  s.num = 8.4e6,     # 84% susceptible
+  i1.num = 35000,    # ~0.35% in primary infection
+  i2.num = 260000,   # ~2.6% actively shedding (reactivation phase)
+  l.num  = 1290000,  # ~12.9% latent
+  v.num  = 0,        # no vaccinated individuals (since chi = 0)
+  si1.flow = 0,
+  si2.flow = 0,
+  sl.flow  = 0,
+  v.flow   = 0
+)
+
+control <- control.dcm(nsteps = 40*365, new.mod = hsv2AoN)
+
+mod <- dcm(param, init, control)
+mod
+
+# Mutate within the dcm object to add total population and compartment prevalences
+mod <- mutate_epi(mod, num = s.num + i1.num + i2.num + l.num + v.num)
+mod <- mutate_epi(mod, 
+                  i1.prev = i1.num / num, 
+                  i2.prev = i2.num / num,
+                  l.prev  = l.num  / num,
+                  il.prev = (i1.num + i2.num + l.num) / num
+)
+
+df <- as.data.frame(mod)
+head(df)
+
+# Preliminary Plots
+# Prevalence plot (proportions of population)
+par(mfrow = c(1, 1), mar = c(4, 4, 3, 2), mgp = c(2.5, 1, 0))
+plot(mod, y = c("i1.prev", "i2.prev", "l.prev"), 
+     main = "HSV-2 Infection Stage Prevalences (Proportions)",
+     ylab = "Proportion of Total Population",
+     xlab = "Time (days)",
+     col = c("firebrick", "darkorange", "steelblue"),
+     lwd = 2,
+     lty = 1,
+     legend = "bottomright",
+     run = 1)
+
+# Flow plot (new transitions per day)
+par(mfrow = c(1, 1), mar = c(4, 4, 3, 2), mgp = c(2.5, 1, 0))
+plot(mod, y = c("si1.flow", "si2.flow", "sl.flow", "v.flow"), 
+     main = "Daily Incidence Flows Between Compartments",
+     ylab = "Individuals per Day",
+     xlab = "Time (days)",
+     col = c("purple", "forestgreen", "deepskyblue3", "darkgray"),
+     lwd = 2,
+     lty = 1,
+     legend = "bottomright",
+     run = 1)
+
+# Other exploratory plots
+# Convert the time scale from days to years
+df$time_years <- df$time / 365
+
+# Prevalence plots
+# I1 prevalence (Primary infection)
+plot(df$time_years, df$i1.prev, type = "l", col = "firebrick", lwd = 2,
+     xlab = "Time (years)", ylab = "Proportion",
+     main = "Prevalence of Primary Infection (I1)")
+
+# I2 prevalence (Reactivation)
+plot(df$time_years, df$i2.prev, type = "l", col = "darkorange", lwd = 2,
+     xlab = "Time (years)", ylab = "Proportion",
+     main = "Prevalence of Reactivating Infections (I2)")
+
+# Latent prevalence
+plot(df$time_years, df$l.prev, type = "l", col = "steelblue", lwd = 2,
+     xlab = "Time (years)", ylab = "Proportion",
+     main = "Prevalence of Latent Infections (L)")
+
+# Incidence (Flow) plots
+# S → I1 flow (new infections)
+plot(df$time_years, df$si1.flow, type = "l", col = "purple", lwd = 2,
+     xlab = "Time (years)", ylab = "Individuals per Day",
+     main = "Flow from S → I1 (New Primary Infections)")
+
+# L → I2 flow (reactivations)
+plot(df$time_years, df$si2.flow, type = "l", col = "forestgreen", lwd = 2,
+     xlab = "Time (years)", ylab = "Individuals per Day",
+     main = "Flow from L → I2 (Reactivations)")
+
+# I → L flow (return to latency)
+plot(df$time_years, df$sl.flow, type = "l", col = "deepskyblue3", lwd = 2,
+     xlab = "Time (years)", ylab = "Individuals per Day",
+     main = "Flow from I2 → L (Back to Latency)")
+
+# Vaccination flow
+plot(df$time_years, df$v.flow, type = "l", col = "gray40", lwd = 2,
+     xlab = "Time (years)", ylab = "Individuals per Day",
+     main = "Flow into Vaccination (V)")
+```
+
+## Addressing the vaccination rate for the catch-up strategy and correcting nomenclature issues
+
+```{r}
+# Model function 
+hsv2AoN <- function(t, t0, parms) {
+with(as.list(c(t0, parms)), {
+
+# 1. Track the total population size
+  num <- s.num + i1.num + i2.num + l.num + v.num
+  
+# 2. Define lambda and derived values
+  lambda <- (tau*c) * ((i1.num + i2.num)/num) 
+  gamma_1 <- 1/i1.dur
+  gamma_2 <- 1/i2.dur
+  sigma <- 1/l.dur
+  p_2 <- -log(1 - f)/cov_t
+  
+# 3. Write four differential equations
+  
+  dS <- (-lambda*s.num) - (p_2*chi*s.num) + ((1 - p_1*chi)*mu*num) - (kappa*s.num)
+
+  dI1 <- (lambda*s.num) - (gamma_1*i1.num) - (kappa*i1.num)
+
+  dI2 <- (sigma*l.num) - (gamma_2*i2.num) - (kappa*i2.num)
+
+  dL <- (gamma_1*i1.num) + (gamma_2*i2.num) - (sigma*l.num) - (kappa*l.num)
+
+  dV <- (p_1*chi*mu*num) + (p_2*chi*s.num) - (kappa*v.num)
+    
+# 4. Outputs
+  list(c(dS, dI1, dI2, dL, dV,
+         si1.flow = lambda*s.num,
+         li2.flow = sigma*l.num,
+         l.flow = gamma_1*i1.num + gamma_2*i2.num,
+         v.flow = p_1*chi*mu*num + p_2*chi*s.num
+))
+})
+}
+
+# 5. Inputs
+param <- param.dcm(mu = 0.029/365,
+                   p_1 = 0,
+                   f = 0,
+                   cov_t = 0,
+                   chi = 0,
+                   kappa = 0.029/365,
+                   tau = 0.01, 
+                   c = 120/365, 
+                   i1.dur = 20,
+                   i2.dur = 4.4,
+                   l.dur = 19.8)
+
+init <- init.dcm(
+  s.num = 8.4e6,     # 84% susceptible
+  i1.num = 35000,    # ~0.35% in primary infection
+  i2.num = 260000,   # ~2.6% actively shedding (reactivation phase)
+  l.num  = 1290000,  # ~12.9% latent
+  v.num  = 0,        # no vaccinated individuals (since chi = 0)
+  si1.flow = 0,
+  li2.flow = 0,
+  l.flow  = 0,
+  v.flow   = 0
+)
+
+control <- control.dcm(nsteps = 40*365, new.mod = hsv2AoN)
+
+mod <- dcm(param, init, control)
+mod
+
+# Mutate within the dcm object to add total population and compartment prevalences
+mod <- mutate_epi(mod, num = s.num + i1.num + i2.num + l.num + v.num)
+mod <- mutate_epi(mod, 
+                  i1.prev = i1.num / num, 
+                  i2.prev = i2.num / num,
+                  l.prev  = l.num  / num,
+                  il.prev = (i1.num + i2.num + l.num) / num
+)
+
+df <- as.data.frame(mod)
+head(df)
+```
+
+## From a mass-action into a per-partnership infection probability model
+
+```{r}
+# Model function 
+hsv2AoN <- function(t, t0, parms) {
+with(as.list(c(t0, parms)), {
+
+# 1. Track the total population size
+  num <- s.num + i1.num + i2.num + l.num + v.num
+  
+# 2. Define lambda and derived values
+# 2a. Define the force of infection in terms of a per-partnership probability
+# Define the per-partnership risk of infection alpha
+  alpha <- 1 - (1 - tau)^cpp
+
+# Define lambda incorporating the partnership formation rate and the number of coital acts per partnership
+  lambda <- pp*alpha * ((i1.num + i2.num)/num) 
+  
+# 2b. Define the other derived values from the parameters 
+  gamma_1 <- 1/i1.dur
+  gamma_2 <- 1/i2.dur
+  sigma <- 1/l.dur
+  p_2 <- -log(1 - f)/cov_t
+  
+# 3. Write four differential equations
+  
+  dS <- (-lambda*s.num) - (p_2*chi*s.num) + ((1 - p_1*chi)*mu*num) - (kappa*s.num)
+
+  dI1 <- (lambda*s.num) - (gamma_1*i1.num) - (kappa*i1.num)
+
+  dI2 <- (sigma*l.num) - (gamma_2*i2.num) - (kappa*i2.num)
+
+  dL <- (gamma_1*i1.num) + (gamma_2*i2.num) - (sigma*l.num) - (kappa*l.num)
+
+  dV <- (p_1*chi*mu*num) + (p_2*chi*s.num) - (kappa*v.num)
+    
+# 4. Outputs
+  list(c(dS, dI1, dI2, dL, dV,
+         si1.flow = lambda*s.num,
+         li2.flow = sigma*l.num,
+         l.flow = gamma_1*i1.num + gamma_2*i2.num,
+         v.flow = p_1*chi*mu*num + p_2*chi*s.num
+))
+})
+}
+
+# 5. Inputs 
+# 5a. Model parameters
+param <- param.dcm(
+  mu     = 1/(34*365),     # (µ) Per-capita rate of entry (turning 15 y/o) into 15-49 pop
+  p_1    = 0,            # Fraction vaccinated before sexual debut (12-14 y/o)
+  f      = 0.0,          # Desired fraction of 15-49 y/o Susc. population to vaccinate
+  cov_t  = 3*365,        # Time horizon (days) to achieve fraction f
+  chi    = 0.75,         # (ω) Vaccine efficacy or acceptance fraction
+  kappa  = 1/(34*365),     # (κ) Per-capita removal rate (aging out ~49 y/o)
+  tau    = 0.05,         # (τ) HSV-2 transmission probability per sex act
+  cpp    = 120,           # Avg # coital acts per partnership in 15-49 pop
+  pp     = 5/365,            # Partnership formation rate (partnerships/person/year)
+  i1.dur = 20,           # 1 / γ₁ → Primary infection duration
+  i2.dur = 4.4,          # 1 / γ₂ → Recurrent infection duration
+  l.dur  = 19.8          # 1 / σ  → Latent infection duration (reactivation rate)
+)
+
+# 5b. Initial conditions to simulate the California population (~40 million people)
+init <- init.dcm(
+  s.num    = 10000000,   # ~84.1% susceptible
+  i1.num   = 10,         # ~0.35% in primary infection
+  i2.num   = 0,    # ~2.6% actively shedding (reactivation phase)
+  l.num    = 0,    # ~12.95% latent
+  v.num    = 0,          # no vaccinated individuals at start
+  si1.flow = 0,          # Flow from Susceptibles to primary infection
+  li2.flow = 0,          # Flow from Latency to Recurrent infection 
+  l.flow   = 0,          # Flow from Primary (I1) and Recurrent (I2) infections into Latency
+  v.flow   = 0           # Flow into the Vaccinated compartment
+)
+
+
+control <- control.dcm(nsteps = 50*365, new.mod = hsv2AoN)
+
+mod <- dcm(param, init, control)
+mod
+
+# Mutate within the dcm object to add total population and compartment prevalences
+mod <- mutate_epi(mod, num = s.num + i1.num + i2.num + l.num + v.num)
+mod <- mutate_epi(mod, 
+                  i1.prev = i1.num / num, 
+                  i2.prev = i2.num / num,
+                  l.prev  = l.num  / num,
+                  il.prev = (i1.num + i2.num + l.num) / num
+)
+
+df <- as.data.frame(mod)
+head(df, 10)
+
+# Preliminary Plots
+# Prevalence plot (proportions of population)
+par(mfrow = c(1, 1), mar = c(4, 4, 3, 2), mgp = c(2.5, 1, 0))
+plot(mod, y = c("i1.prev", "i2.prev", "l.prev"), 
+     main = "HSV-2 Infection Stage Prevalences (Proportions)",
+     ylab = "Proportion of Total Population",
+     xlab = "Time (days)",
+     col = c("firebrick", "darkorange", "steelblue"),
+     lwd = 2,
+     lty = 1,
+     legend = "bottomright",
+     run = 1, 
+     xlim = c(0, 8000)
+     )
+
+# Flow plot (transitions per day)
+par(mfrow = c(1, 1), mar = c(4, 4, 3, 2), mgp = c(2.5, 1, 0))
+plot(mod, y = c("si1.flow", "li2.flow", "l.flow", "v.flow"), 
+     main = "Daily Incidence Flows Between Compartments",
+     ylab = "Individuals per Day",
+     xlab = "Time (days)",
+     col = c("purple", "forestgreen", "deepskyblue3", "darkgray"),
+     lwd = 2,
+     lty = 1,
+     legend = "bottomright",
+     run = 1,
+     xlim = c(0, 8000)
+     )
+
+# Individual plots (time-scale in days)
+# Prevalence plots
+# I1 prevalence (Primary infection)
+plot(mod, y = "i1.prev", col = "firebrick", lwd = 2,
+     xlab = "Time (days)", ylab = "Proportion",
+     main = "Prevalence of Primary Infection (I1)",
+     ylim = c(0,0.02),
+     xlim = c(0, 8000)
+     )
+
+# I2 prevalence (Reactivation)
+plot(mod, y = "i2.prev", col = "darkorange", lwd = 2,
+     xlab = "Time (days)", ylab = "Proportion",
+     main = "Prevalence of Reactivating Infections (I2)",
+     ylim = c(0,0.3),
+     xlim = c(0, 8000)
+     )
+
+# Latent prevalence
+plot(mod, y = "l.prev", col = "steelblue", lwd = 2,
+     xlab = "Time (days)", ylab = "Proportion",
+     main = "Prevalence of Latent Infections (L)",
+     ylim = c(0,1)
+     )
+
+# Incidence (Flow) plots
+# S → I1 flow (new infections)
+plot(mod, y = "si1.flow", col = "purple", lwd = 2,
+     xlab = "Time (days)", ylab = "Individuals per Day",
+     main = "Flow from S → I1 (New Primary Infections)",
+     xlim = c(0, 8000)
+     )
+
+# L → I2 flow (reactivations)
+plot(mod, y = "li2.flow", col = "forestgreen", lwd = 2,
+     xlab = "Time (days)", ylab = "Individuals per Day",
+     main = "Flow from L → I2 (Reactivations)",
+     xlim = c(0, 8000)
+     )
+
+# I → L flow (return to latency)
+plot(mod, y = "l.flow", col = "deepskyblue3", lwd = 2,
+     xlab = "Time (days)", ylab = "Individuals per Day",
+     main = "Flow from I1 & I2 → L (Back to Latency)",
+     xlim = c(0, 8000)
+     )
+
+# Vaccination flow
+plot(mod, y = "v.flow", col = "gray40", lwd = 2,
+     xlab = "Time (days)", ylab = "Individuals per Day",
+     main = "Flow into Vaccination (V)",
+     xlim = c(0, 8000)
+     )
+```
+
+## Identifying the vaccination at the point of equilibrium
+
+```{r}
+# Model function 
+hsv2AoN <- function(t, t0, parms) {
+with(as.list(c(t0, parms)), {
+
+# 1. Track the total population size
+  num <- s.num + i1.num + i2.num + l.num + v.num
+  
+# 2. Define lambda and derived values
+# 2a. Define the force of infection in terms of a per-partnership probability
+# Define the per-partnership risk of infection alpha
+  alpha <- 1 - (1 - tau)^cpp
+
+# Define lambda incorporating the partnership formation rate and the number of coital acts per partnership
+  lambda <- pp*alpha * ((i1.num + i2.num)/num) 
+  
+# 2b. Define the other derived values from the parameters 
+  gamma_1 <- 1/i1.dur
+  gamma_2 <- 1/i2.dur
+  sigma <- 1/l.dur
+  p_2 <- -log(1 - f)/cov_t
+  
+# 3. Write four differential equations
+  
+  dS <- (-lambda*s.num) - (p_2*chi*s.num) + ((1 - p_1*chi)*mu*num) - (kappa*s.num)
+
+  dI1 <- (lambda*s.num) - (gamma_1*i1.num) - (kappa*i1.num)
+
+  dI2 <- (sigma*l.num) - (gamma_2*i2.num) - (kappa*i2.num)
+
+  dL <- (gamma_1*i1.num) + (gamma_2*i2.num) - (sigma*l.num) - (kappa*l.num)
+
+  dV <- (p_1*chi*mu*num) + (p_2*chi*s.num) - (kappa*v.num)
+    
+# 4. Outputs
+  list(c(dS, dI1, dI2, dL, dV,
+         si1.flow = lambda*s.num,
+         li2.flow = sigma*l.num,
+         l.flow = gamma_1*i1.num + gamma_2*i2.num,
+         v.flow = p_1*chi*mu*num + p_2*chi*s.num
+))
+})
+}
+
+# 5. Inputs 
+# 5a. Model parameters
+param <- param.dcm(
+  mu     = 1/(34*365),     # (µ) Per-capita rate of entry (turning 15 y/o) into 15-49 pop
+  p_1    = 0,            # Fraction vaccinated before sexual debut (12-14 y/o)
+  f      = 0.0,          # Desired fraction of 15-49 y/o Susc. population to vaccinate
+  f.post=0,
+  cov_t  = 3*365,        # Time horizon (days) to achieve fraction f
+  chi    = 0.75,         # (ω) Vaccine efficacy or acceptance fraction
+  kappa  = 1/(34*365),     # (κ) Per-capita removal rate (aging out ~49 y/o)
+  tau    = 0.05,         # (τ) HSV-2 transmission probability per sex act
+  cpp    = 120,           # Avg # coital acts per partnership in 15-49 pop
+  pp     = 5/365,            # Partnership formation rate (partnerships/person/year)
+  i1.dur = 20,           # 1 / γ₁ → Primary infection duration
+  i2.dur = 4.4,          # 1 / γ₂ → Recurrent infection duration
+  l.dur  = 19.8          # 1 / σ  → Latent infection duration (reactivation rate)
+)
+
+# 5b. Initial conditions to simulate 10 million people
+init <- init.dcm(
+  s.num    = 10000000,   
+  i1.num   = 10,         
+  i2.num   = 0,    
+  l.num    = 0,    
+  v.num    = 0,          # no vaccinated individuals at start
+  si1.flow = 0,          # Flow from Susceptibles to primary infection
+  li2.flow = 0,          # Flow from Latency to Recurrent infection 
+  l.flow   = 0,          # Flow from Primary (I1) and Recurrent (I2) infections into Latency
+  v.flow   = 0           # Flow into the Vaccinated compartment
+)
+
+
+control <- control.dcm(nsteps = 50*365, new.mod = hsv2AoN)
+
+mod <- dcm(param, init, control)
+mod
+
+# Mutate within the dcm object to add total population and compartment prevalences
+mod <- mutate_epi(mod, num = s.num + i1.num + i2.num + l.num + v.num)
+mod <- mutate_epi(mod, 
+                  i1.prev = i1.num / num, 
+                  i2.prev = i2.num / num,
+                  l.prev  = l.num  / num,
+                  il.prev = (i1.num + i2.num + l.num) / num
+)
+
+df <- as.data.frame(mod)
+head(df, 10)
+
+# Preliminary Plots including the equilibrium visual inspection
+vline_ <- 6500 # approximate equilibrium day to mark
+
+# Estimated plateaus (mean of last 365 days) 
+plat_i1prev  <- mean(tail(df$i1.prev, 365))
+plat_i2prev  <- mean(tail(df$i2.prev, 365))
+plat_lprev   <- mean(tail(df$l.prev, 365))
+
+plat_si1flow <- mean(tail(df$si1.flow, 365))
+plat_li2flow <- mean(tail(df$li2.flow, 365))
+plat_lflow   <- mean(tail(df$l.flow, 365))
+plat_vflow   <- mean(tail(df$v.flow, 365))
+
+xlim_ <- c(0, 10000)
+
+# Prevalence plot (all stages)
+par(mfrow = c(1, 1), mar = c(4, 4, 3, 2), mgp = c(2.5, 1, 0))
+plot(mod, y = c("i1.prev", "i2.prev", "l.prev"),
+     main = "HSV-2 Infection Stage Prevalences (Proportions)",
+     ylab = "Proportion of Total Population", xlab = "Time (days)",
+     col = c("firebrick", "darkorange", "steelblue"),
+     lwd = 2, lty = 1, legend = "bottomright", run = 1, xlim = xlim_)
+abline(h = plat_lprev, col = "grey", lty = 3)
+abline(v = vline_, col = "red", lty = 2)
+
+# Flow plot (all flows)
+par(mfrow = c(1, 1), mar = c(4, 4, 3, 2), mgp = c(2.5, 1, 0))
+plot(mod, y = c("si1.flow", "li2.flow", "l.flow", "v.flow"),
+     main = "Daily Incidence Flows Between Compartments",
+     ylab = "Individuals per Day", xlab = "Time (days)",
+     col = c("purple", "forestgreen", "deepskyblue3", "gray40"),
+     lwd = 2, lty = 1, legend = "bottomright", run = 1, xlim = xlim_)
+abline(h = plat_lflow, col = "grey60", lty = 3, lwd = 2)
+abline(v = vline_, col = "red", lty = 2)
+
+# I1 prevalence
+plot(mod, y = "i1.prev", col = "firebrick", lwd = 2,
+     xlab = "Time (days)", ylab = "Proportion",
+     main = "Prevalence of Primary Infection (I1)",
+     ylim = c(0, 0.02), xlim = xlim_)
+abline(h = plat_i1prev, col = "grey", lty = 3)
+abline(v = vline_, col = "red", lty = 2)
+
+# I2 prevalence
+plot(mod, y = "i2.prev", col = "darkorange", lwd = 2,
+     xlab = "Time (days)", ylab = "Proportion",
+     main = "Prevalence of Reactivating Infections (I2)",
+     ylim = c(0, 0.30), xlim = xlim_)
+abline(h = plat_i2prev, col = "grey", lty = 3)
+abline(v = vline_, col = "red", lty = 2)
+
+# Latent prevalence
+plot(mod, y = "l.prev", col = "steelblue", lwd = 2,
+     xlab = "Time (days)", ylab = "Proportion",
+     main = "Prevalence of Latent Infections (L)",
+     ylim = c(0, 1))
+abline(h = plat_lprev, col = "grey", lty = 3)
+abline(v = vline_, col = "red", lty = 2)
+
+# S → I1 flow
+plot(mod, y = "si1.flow", col = "purple", lwd = 2,
+     xlab = "Time (days)", ylab = "Individuals per Day",
+     main = "Flow from S → I1 (New Primary Infections)",
+     xlim = xlim_)
+abline(h = plat_si1flow, col = "grey60", lty = 3, lwd = 2)
+abline(v = vline_, col = "red", lty = 2)
+
+# L → I2 flow
+plot(mod, y = "li2.flow", col = "forestgreen", lwd = 2,
+     xlab = "Time (days)", ylab = "Individuals per Day",
+     main = "Flow from L → I2 (Reactivations)",
+     xlim = xlim_)
+abline(h = plat_li2flow, col = "grey60", lty = 3, lwd = 2)
+abline(v = vline_, col = "red", lty = 2)
+
+# I1 & I2 → L flow
+plot(mod, y = "l.flow", col = "deepskyblue3", lwd = 2,
+     xlab = "Time (days)", ylab = "Individuals per Day",
+     main = "Flow from I1 & I2 → L (Back to Latency)",
+     xlim = xlim_)
+abline(h = plat_lflow, col = "grey60", lty = 3, lwd = 2)
+abline(v = vline_, col = "red", lty = 2)
+
+# Vaccination flow
+plot(mod, y = "v.flow", col = "gray40", lwd = 2,
+     xlab = "Time (days)", ylab = "Individuals per Day",
+     main = "Flow into Vaccination (V)",
+     xlim = xlim_)
+abline(h = plat_vflow, col = "grey60", lty = 3, lwd = 2)
+abline(v = vline_, col = "red", lty = 2)
+
+#S I1 I2 L 
+options(scipen = 999)
+par(mfrow = c(1, 1))
+#Plot susceptibles first
+plot(df$time, df$s.num, type = "l", col = "blue", lwd = 2,
+     xlab = "Time (days)", ylab = "Number of Individuals",
+     main = "HSV-2 Dynamics Over Time (No Vaccination)",
+     xlim=xlim_,
+     ylim = c(0, max(df$s.num)),
+     yaxt = "n")
+
+# Custom y-axis with commas
+ticks <- pretty(c(0, max(df$s.num)))
+axis(2, at = ticks, labels = format(ticks, big.mark = ",", scientific = FALSE),
+     cex.axis = 0.8)
+box()
+
+#Add I1, I2, and L
+lines(df$time, df$i1.num, col = "red", lwd = 2)
+lines(df$time, df$i2.num, col = "orange", lwd = 2)
+lines(df$time, df$l.num, col = "green", lwd = 2)
+
+# 4. Add a legend
+legend("left",
+       legend = c("Susceptible (S)", "Primary Infected (I1)", "Recurrent Infected (I2)", "Latent (L)"),
+       col = c("blue", "red", "orange", "green"),
+       lwd = 2, lty = 1, bty = "n")
+
+```
+
+## Integrating the intervention (catch-up at day 3000)
+
+```{r}
+# -------------------------------------------------------------------
+# Timed‑intervention HSV‑2 
+# No vaccination until equilibrium (~ day 6500) doesnt work! 
+# Vaccination campaign begins on day 3000 vs 4000 vs 5000 --> GO WITH 3000
+#f=0, f.post=0.50, cov_t=3*365
+# -------------------------------------------------------------------
+
+# Model function 
+hsv2AoN <- function(t, t0, parms) {
+with(as.list(c(t0, parms)), {
+
+  # Timed intervention: switch parameters at int.start
+  if (t >= int.start) {
+    p_1 <- p1.post                              # post‑campaign p1
+    p_2 <- -log(1 - f.post) / cov_t             # post‑campaign p2
+  } else {
+    p_2 <- -log(1 - f) / cov_t                  # baseline p2 (0 if f = 0)
+  }
+
+# 1. Track the total population size
+  num <- s.num + i1.num + i2.num + l.num + v.num
+  
+# 2. Define lambda and derived values
+  alpha   <- 1 - (1 - tau)^cpp                 
+  lambda  <- pp*alpha * ((i1.num + i2.num)/num)
+  gamma_1 <- 1/i1.dur
+  gamma_2 <- 1/i2.dur
+  sigma   <- 1/l.dur
+  
+# 3. Differential equations
+  dS <- (-lambda*s.num) - (p_2*chi*s.num) + ((1 - p_1*chi)*mu*num) - (kappa*s.num)
+  dI1 <- (lambda*s.num) - (gamma_1*i1.num) - (kappa*i1.num)
+  dI2 <- (sigma*l.num) - (gamma_2*i2.num) - (kappa*i2.num)
+  dL <- (gamma_1*i1.num) + (gamma_2*i2.num) - (sigma*l.num) - (kappa*l.num)
+  dV <- (p_1*chi*mu*num) + (p_2*chi*s.num) - (kappa*v.num)
+    
+# 4. Outputs
+  list(c(dS, dI1, dI2, dL, dV,
+         si1.flow = lambda*s.num,
+         li2.flow = sigma*l.num,
+         l.flow   = gamma_1*i1.num + gamma_2*i2.num,
+         v.flow   = p_1*chi*mu*num + p_2*chi*s.num))
+})
+}
+
+# 5. Inputs 
+# 5a. Model parameters
+param <- param.dcm(
+  mu        = 1/(34*365),   # (µ) Per-capita rate of entry (turning 15 y/o)
+  p_1       = 0,            # Fraction vaccinated before sexual debut (baseline)
+  f         = 0,            # Desired baseline adult coverage (set to 0 here)
+  p1.post   = 0,            # Fraction vaccinated before sexual debut after campaign
+  f.post    = 0.50,         # Adult catch‑up coverage after campaign
+  cov_t     = 3*365,        # Time horizon (days) to achieve f.post
+  int.start = 3000,         # Day vaccination campaign begins (post‑equilibrium)
+  chi       = 0.75,         # (ω) Vaccine efficacy or acceptance fraction
+  kappa     = 1/(34*365),   # (κ) Per-capita removal rate (aging out ~49 y/o)
+  tau       = 0.05,         # (τ) HSV-2 transmission probability per sex act
+  cpp       = 120,          # Avg # coital acts per partnership in 15-49 pop
+  pp        = 5/365,        # Partnership formation rate (partnerships/person/day)
+  i1.dur    = 20,           # 1 / γ₁ → Primary infection duration (days)
+  i2.dur    = 4.4,          # 1 / γ₂ → Recurrent infection duration (days)
+  l.dur     = 19.8          # 1 / σ  → Latent infection duration (days)
+)
+
+# 5b. Initial conditions to simulate 10 million people
+init <- init.dcm(
+  s.num    = 10000000,   # susceptibles
+  i1.num   = 10,         # primary infections
+  i2.num   = 0,          # reactivating infections
+  l.num    = 0,          # latent infections
+  v.num    = 0,          # vaccinated individuals
+  si1.flow = 0,          # S → I1 flow
+  li2.flow = 0,          # L → I2 flow
+  l.flow   = 0,          # I1 & I2 → L flow
+  v.flow   = 0           # Vaccination flow
+)
+
+control <- control.dcm(nsteps = 50*365, new.mod = hsv2AoN)
+
+mod <- dcm(param, init, control)
+mod
+
+# Mutate within the dcm object to add total population and prevalences
+mod <- mutate_epi(mod, num = s.num + i1.num + i2.num + l.num + v.num)
+mod <- mutate_epi(mod, 
+                  i1.prev = i1.num/num, 
+                  i2.prev = i2.num/num,
+                  l.prev  = l.num/num,
+                  il.prev = (i1.num + i2.num + l.num)/num)
+
+df <- as.data.frame(mod)
+head(df, 10)
+
+# Preliminary Plots including the equilibrium visual inspection
+vline_ <- 3000 # approximate equilibrium day to mark
+
+# Estimated plateaus (mean of last 365 days) 
+plat_i1prev  <- mean(tail(df$i1.prev, 365))
+plat_i2prev  <- mean(tail(df$i2.prev, 365))
+plat_lprev   <- mean(tail(df$l.prev, 365))
+
+plat_si1flow <- mean(tail(df$si1.flow, 365))
+plat_li2flow <- mean(tail(df$li2.flow, 365))
+plat_lflow   <- mean(tail(df$l.flow, 365))
+plat_vflow   <- mean(tail(df$v.flow, 365))
+
+xlim_ <- c(0, 10000)
+
+# Prevalence plot (all stages)
+par(mfrow = c(1, 1), mar = c(4, 4, 3, 2), mgp = c(2.5, 1, 0))
+plot(mod, y = c("i1.prev", "i2.prev", "l.prev"),
+     main = "HSV-2 Infection Stage Prevalences (Proportions)",
+     ylab = "Proportion of Total Population", xlab = "Time (days)",
+     col = c("firebrick", "darkorange", "steelblue"),
+     lwd = 2, lty = 1, legend = "bottomright", run = 1, xlim = xlim_)
+abline(h = plat_lprev, col = "grey", lty = 3)
+abline(v = vline_, col = "red", lty = 2)
+
+
+
+#Cumulative Incidence of I1
+mod <- mutate_epi(mod, I1_cum_incidence = cumsum(si1.flow))
+#Cumulative Incidence of I2
+mod <- mutate_epi(mod, I2_cum_incidence = cumsum(li2.flow))
+#Cumulative Incidence of L
+mod <- mutate_epi(mod, L_cum_incidence = cumsum(l.flow))
+#Cumulative Incidence of V
+mod <- mutate_epi(mod, V_cum_incidence = cumsum(v.flow))
+df <- as.data.frame(mod)
+head(df, 10)
+
+#Plot Cumulative Incidence of all compartments
+par(mfrow = c(2, 2))
+#I1 Primary Infection
+plot(mod, y="I1_cum_incidence",
+     main="Primary Infections Cumulative Incidence",
+     xlab="Time (days)",
+     ylab="Cumulative Incidence",
+     col="red", lwd=2, lty=1, xlim=xlim_)
+abline(h = plat_lprev, col = "grey", lty = 3)
+abline(v = vline_, col = "red", lty = 2)
+#I2 Recurrence Infection
+plot(mod, y="I2_cum_incidence",
+     main="Recurrent Infections Cumulative Incidence",
+     xlab="Time (days)",
+     ylab="Cumulative Incidence",
+     col="orange", lwd=2, lty=1, xlim=xlim_)
+abline(h = plat_lprev, col = "grey", lty = 3)
+abline(v = vline_, col = "red", lty = 2)
+#L Latent Infection
+plot(mod, y="L_cum_incidence",
+     main="Latent Infections Cumulative Incidence",
+     xlab="Time (days)",
+     ylab="Cumulative Incidence",
+     col="blue", lwd=2, lty=1, xlim=xlim_)
+abline(h = plat_lprev, col = "grey", lty = 3)
+abline(v = vline_, col = "red", lty = 2)
+#V Vaccinated
+plot(mod, y="V_cum_incidence",
+     main="Vaccinated Cumulative Incidence",
+     xlab="Time (days)",
+     ylab="Cumulative Incidence",
+     col="green", lwd=2, lty=1, xlim=xlim_)
+abline(h = plat_lprev, col = "grey", lty = 3)
+abline(v = vline_, col = "red", lty = 2)
+
+#final # of I1 look at df
+
+
+plot(mod, y=c("I1_cum_incidence", "I2_cum_incidence", "L_cum_incidence", "V_cum_incidence"),
+     main="HSV-2 Cumulative Incidence",
+     xlab="Time (days)",
+     ylab="Cumulative Incidence",
+     col=c("red", "orange", "blue","green" ),
+     lwd=2, lty=1, run=1, xlim=xlim_)
+abline(h = plat_lprev, col = "grey", lty = 3)
+abline(v = vline_, col = "red", lty = 2)
+legend("topright", 
+       legend = c("Primary Infections (I1)", 
+                  "Reactivating Infections (I2)", 
+                  "Latent Infections (L)", 
+                  "Vaccinated (V)"),
+       col = c("red", "orange", "blue", "green"),
+       lty = 1, lwd = 2, cex = 0.8, bty = "n")
+
+#-log(1 - 0.50) / (3*365)
+#subset(df, time == 6500)
+#df[df$time %in% 6490:6510, c("time", "s.num", "v.num")]
+# Plot susceptibles over time
+plot(df$time, df$s.num, type = "l", lwd = 2,
+     col = "blue",
+     xlab = "Time (days)", 
+     ylab = "Number of Susceptibles",
+     main = "Susceptible Population Over Time")
+
+# Add vertical line for intervention start (day 4500)
+abline(v = 6500, col = "red", lty = 2)
+
+
+
+
+
+# Flow plot (all flows)
+par(mfrow = c(1, 1), mar = c(4, 4, 3, 2), mgp = c(2.5, 1, 0))
+plot(mod, y = c("si1.flow", "li2.flow", "l.flow", "v.flow"),
+     main = "Daily Incidence Flows Between Compartments",
+     ylab = "Individuals per Day", xlab = "Time (days)",
+     col = c("purple", "forestgreen", "deepskyblue3", "gray40"),
+     lwd = 2, lty = 1, legend = "bottomright", run = 1, xlim = xlim_)
+abline(h = plat_lflow, col = "grey60", lty = 3, lwd = 2)
+abline(v = vline_, col = "red", lty = 2)
+
+# I1 prevalence
+plot(mod, y = "i1.prev", col = "firebrick", lwd = 2,
+     xlab = "Time (days)", ylab = "Proportion",
+     main = "Prevalence of Primary Infection (I1)",
+     ylim = c(0, 0.02), xlim = xlim_)
+abline(h = plat_i1prev, col = "grey", lty = 3)
+abline(v = vline_, col = "red", lty = 2)
+
+# I2 prevalence
+plot(mod, y = "i2.prev", col = "darkorange", lwd = 2,
+     xlab = "Time (days)", ylab = "Proportion",
+     main = "Prevalence of Reactivating Infections (I2)",
+     ylim = c(0, 0.30), xlim = xlim_)
+abline(h = plat_i2prev, col = "grey", lty = 3)
+abline(v = vline_, col = "red", lty = 2)
+
+# Latent prevalence
+plot(mod, y = "l.prev", col = "steelblue", lwd = 2,
+     xlab = "Time (days)", ylab = "Proportion",
+     main = "Prevalence of Latent Infections (L)",
+     ylim = c(0, 1))
+abline(h = plat_lprev, col = "grey", lty = 3)
+abline(v = vline_, col = "red", lty = 2)
+
+# S → I1 flow
+plot(mod, y = "si1.flow", col = "purple", lwd = 2,
+     xlab = "Time (days)", ylab = "Individuals per Day",
+     main = "Flow from S → I1 (New Primary Infections)",
+     xlim = xlim_)
+abline(h = plat_si1flow, col = "grey60", lty = 3, lwd = 2)
+abline(v = vline_, col = "red", lty = 2)
+
+
+
+#Cumulative Incidence of I1
+df$I1_cum_incidence <- cumsum(df$si1.flow)
+mod <- mutate_epi(mod, I1_cum_incidence = cumsum(si1.flow))
+plot(mod, y="I1_cum_incidence", col="purple", lwd=2,
+     xlab="Time (days)", ylab="Cumulative Incidence",
+     main="Cumulative Incidence of Primary Infections",
+     xlim=xlim_)
+abline(h = plat_si1flow, col = "grey60", lty = 3, lwd = 2)
+abline(v = vline_, col = "red", lty = 2)
+
+
+
+
+# L → I2 flow
+plot(mod, y = "li2.flow", col = "forestgreen", lwd = 2,
+     xlab = "Time (days)", ylab = "Individuals per Day",
+     main = "Flow from L → I2 (Reactivations)",
+     xlim = xlim_)
+abline(h = plat_li2flow, col = "grey60", lty = 3, lwd = 2)
+abline(v = vline_, col = "red", lty = 2)
+
+# I1 & I2 → L flow
+plot(mod, y = "l.flow", col = "deepskyblue3", lwd = 2,
+     xlab = "Time (days)", ylab = "Individuals per Day",
+     main = "Flow from I1 & I2 → L (Back to Latency)",
+     xlim = xlim_)
+abline(h = plat_lflow, col = "grey60", lty = 3, lwd = 2)
+abline(v = vline_, col = "red", lty = 2)
+
+# Vaccination flow
+plot(mod, y = "v.flow", col = "gray40", lwd = 2,
+     xlab = "Time (days)", ylab = "Individuals per Day",
+     main = "Flow into Vaccination (V)",
+     xlim = xlim_)
+abline(h = plat_vflow, col = "grey60", lty = 3, lwd = 2)
+abline(v = vline_, col = "red", lty = 2)
+
+
+
+
+tail(df$V_cum_incidence, 1)
+```
+
+approach 2
+
+```{r}
+# -------------------------------------------------------------------
+# Timed‑intervention HSV‑2 
+# No vaccination until day 3000
+# Vaccination campaign begins on day 3000
+#f=0, f.post=0.65, cov_t=3*365
+# -------------------------------------------------------------------
+
+# Model function 
+hsv2AoN <- function(t, t0, parms) {
+with(as.list(c(t0, parms)), {
+
+  # Timed intervention: switch parameters at int.start
+  if (t >= int.start) {
+    p_1 <- p1.post                              # post‑campaign p1
+    p_2 <- -log(1 - f.post) / cov_t             # post‑campaign p2
+  } else {
+    p_2 <- -log(1 - f) / cov_t                  # baseline p2 (0 if f = 0)
+  }
+
+# 1. Track the total population size
+  num <- s.num + i1.num + i2.num + l.num + v.num
+  
+# 2. Define lambda and derived values
+  alpha   <- 1 - (1 - tau)^cpp                 
+  lambda  <- pp*alpha * ((i1.num + i2.num)/num)
+  gamma_1 <- 1/i1.dur
+  gamma_2 <- 1/i2.dur
+  sigma   <- 1/l.dur
+  
+# 3. Differential equations
+  dS <- (-lambda*s.num) - (p_2*chi*s.num) + ((1 - p_1*chi)*mu*num) - (kappa*s.num)
+  dI1 <- (lambda*s.num) - (gamma_1*i1.num) - (kappa*i1.num)
+  dI2 <- (sigma*l.num) - (gamma_2*i2.num) - (kappa*i2.num)
+  dL <- (gamma_1*i1.num) + (gamma_2*i2.num) - (sigma*l.num) - (kappa*l.num)
+  dV <- (p_1*chi*mu*num) + (p_2*chi*s.num) - (kappa*v.num)
+    
+# 4. Outputs
+  list(c(dS, dI1, dI2, dL, dV,
+         si1.flow = lambda*s.num,
+         li2.flow = sigma*l.num,
+         l.flow   = gamma_1*i1.num + gamma_2*i2.num,
+         v.flow   = p_1*chi*mu*num + p_2*chi*s.num))
+})
+}
+
+# 5. Inputs 
+# 5a. Model parameters
+param <- param.dcm(
+  mu        = 1/(34*365),   # (µ) Per-capita rate of entry (turning 15 y/o)
+  p_1       = 0,            # Fraction vaccinated before sexual debut (baseline)
+  f         = 0,            # Desired baseline adult coverage (set to 0 here)
+  p1.post   = 0,            # Fraction vaccinated before sexual debut after campaign
+  f.post    = 0.65,         # Adult catch‑up coverage after campaign
+  cov_t     = 3*365,        # Time horizon (days) to achieve f.post
+  int.start = 3000,         # Day vaccination campaign begins (post‑equilibrium)
+  chi       = 0.75,         # (ω) Vaccine efficacy or acceptance fraction
+  kappa     = 1/(34*365),   # (κ) Per-capita removal rate (aging out ~49 y/o)
+  tau       = 0.05,         # (τ) HSV-2 transmission probability per sex act
+  cpp       = 120,          # Avg # coital acts per partnership in 15-49 pop
+  pp        = 5/365,        # Partnership formation rate (partnerships/person/day)
+  i1.dur    = 20,           # 1 / γ₁ → Primary infection duration (days)
+  i2.dur    = 4.4,          # 1 / γ₂ → Recurrent infection duration (days)
+  l.dur     = 19.8          # 1 / σ  → Latent infection duration (days)
+)
+
+# 5b. Initial conditions to simulate 10 million people
+init <- init.dcm(
+  s.num    = 10000000,   # susceptibles
+  i1.num   = 10,         # primary infections
+  i2.num   = 0,          # reactivating infections
+  l.num    = 0,          # latent infections
+  v.num    = 0,          # vaccinated individuals
+  si1.flow = 0,          # S → I1 flow
+  li2.flow = 0,          # L → I2 flow
+  l.flow   = 0,          # I1 & I2 → L flow
+  v.flow   = 0           # Vaccination flow
+)
+
+control <- control.dcm(nsteps = 50*365, new.mod = hsv2AoN)
+
+mod <- dcm(param, init, control)
+mod
+
+# Mutate within the dcm object to add total population and prevalences
+mod <- mutate_epi(mod, num = s.num + i1.num + i2.num + l.num + v.num)
+mod <- mutate_epi(mod, 
+                  i1.prev = i1.num/num, 
+                  i2.prev = i2.num/num,
+                  l.prev  = l.num/num,
+                  il.prev = (i1.num + i2.num + l.num)/num)
+
+df <- as.data.frame(mod)
+head(df, 10)
+
+# Preliminary Plots including the equilibrium visual inspection
+vline_ <- 3000     #day vaccination starts
+
+# Estimated plateaus (mean of last 365 days) 
+plat_i1prev  <- mean(tail(df$i1.prev, 365))
+plat_i2prev  <- mean(tail(df$i2.prev, 365))
+plat_lprev   <- mean(tail(df$l.prev, 365))
+
+plat_si1flow <- mean(tail(df$si1.flow, 365))
+plat_li2flow <- mean(tail(df$li2.flow, 365))
+plat_lflow   <- mean(tail(df$l.flow, 365))
+plat_vflow   <- mean(tail(df$v.flow, 365))
+
+xlim_ <- c(0, 10000)
+
+#Cumulative Incidence of I1
+mod <- mutate_epi(mod, I1_cum_incidence = cumsum(si1.flow))
+#Cumulative Incidence of I2
+mod <- mutate_epi(mod, I2_cum_incidence = cumsum(li2.flow))
+#Cumulative Incidence of L
+mod <- mutate_epi(mod, L_cum_incidence = cumsum(l.flow))
+#Cumulative Incidence of V
+mod <- mutate_epi(mod, V_cum_incidence = cumsum(v.flow))
+df <- as.data.frame(mod)
+head(df, 10)
+
+#Plot Cumulative Incidence of all compartments
+
+#I1 Primary Infection
+par(mfrow=c(2,2))
+plot(mod, y="I1_cum_incidence",
+     main="Primary Infections Cumulative Incidence",
+     xlab="Time (days)",
+     ylab="Cumulative Incidence",
+     col="red", lwd=2, lty=1, xlim=xlim_)
+abline(h = plat_lprev, col = "grey", lty = 3)
+abline(v = vline_, col = "red", lty = 2)
+#I2 Recurrence Infection
+plot(mod, y="I2_cum_incidence",
+     main="Recurrent Infections Cumulative Incidence",
+     xlab="Time (days)",
+     ylab="Cumulative Incidence",
+     col="orange", lwd=2, lty=1, xlim=xlim_)
+abline(h = plat_lprev, col = "grey", lty = 3)
+abline(v = vline_, col = "red", lty = 2)
+#L Latent Infection
+plot(mod, y="L_cum_incidence",
+     main="Latent Infections Cumulative Incidence",
+     xlab="Time (days)",
+     ylab="Cumulative Incidence",
+     col="blue", lwd=2, lty=1, xlim=xlim_)
+abline(h = plat_lprev, col = "grey", lty = 3)
+abline(v = vline_, col = "red", lty = 2)
+#V Vaccinated
+plot(mod, y="V_cum_incidence",
+     main="Vaccinated Cumulative Incidence",
+     xlab="Time (days)",
+     ylab="Cumulative Incidence",
+     col="green", lwd=2, lty=1, xlim=xlim_)
+abline(h = plat_lprev, col = "grey", lty = 3)
+abline(v = vline_, col = "red", lty = 2)
+
+#tail(df$V_cum_incidence, 1)
+```
+
+approach 3
+
+```{r}
+# -------------------------------------------------------------------
+# Timed‑intervention HSV‑2 
+# No vaccination until day 3000
+# Vaccination campaign begins on day 3000
+#f=0, f.post=0.50, cov_t=3*365, chi=.90 (changed from 0.75)
+# -------------------------------------------------------------------
+
+# Model function 
+hsv2AoN <- function(t, t0, parms) {
+with(as.list(c(t0, parms)), {
+
+  # Timed intervention: switch parameters at int.start
+  if (t >= int.start) {
+    p_1 <- p1.post                              # post‑campaign p1
+    p_2 <- -log(1 - f.post) / cov_t             # post‑campaign p2
+  } else {
+    p_2 <- -log(1 - f) / cov_t                  # baseline p2 (0 if f = 0)
+  }
+
+# 1. Track the total population size
+  num <- s.num + i1.num + i2.num + l.num + v.num
+  
+# 2. Define lambda and derived values
+  alpha   <- 1 - (1 - tau)^cpp                 
+  lambda  <- pp*alpha * ((i1.num + i2.num)/num)
+  gamma_1 <- 1/i1.dur
+  gamma_2 <- 1/i2.dur
+  sigma   <- 1/l.dur
+  
+# 3. Differential equations
+  dS <- (-lambda*s.num) - (p_2*chi*s.num) + ((1 - p_1*chi)*mu*num) - (kappa*s.num)
+  dI1 <- (lambda*s.num) - (gamma_1*i1.num) - (kappa*i1.num)
+  dI2 <- (sigma*l.num) - (gamma_2*i2.num) - (kappa*i2.num)
+  dL <- (gamma_1*i1.num) + (gamma_2*i2.num) - (sigma*l.num) - (kappa*l.num)
+  dV <- (p_1*chi*mu*num) + (p_2*chi*s.num) - (kappa*v.num)
+    
+# 4. Outputs
+  list(c(dS, dI1, dI2, dL, dV,
+         si1.flow = lambda*s.num,
+         li2.flow = sigma*l.num,
+         l.flow   = gamma_1*i1.num + gamma_2*i2.num,
+         v.flow   = p_1*chi*mu*num + p_2*chi*s.num))
+})
+}
+
+# 5. Inputs 
+# 5a. Model parameters
+param <- param.dcm(
+  mu        = 1/(34*365),   # (µ) Per-capita rate of entry (turning 15 y/o)
+  p_1       = 0,            # Fraction vaccinated before sexual debut (baseline)
+  f         = 0,            # Desired baseline adult coverage (set to 0 here)
+  p1.post   = 0,            # Fraction vaccinated before sexual debut after campaign
+  f.post    = 0.50,         # Adult catch‑up coverage after campaign
+  cov_t     = 3*365,        # Time horizon (days) to achieve f.post
+  int.start = 3000,         # Day vaccination campaign begins (post‑equilibrium)
+  chi       = 0.90,         # (ω) Vaccine efficacy or acceptance fraction
+  kappa     = 1/(34*365),   # (κ) Per-capita removal rate (aging out ~49 y/o)
+  tau       = 0.05,         # (τ) HSV-2 transmission probability per sex act
+  cpp       = 120,          # Avg # coital acts per partnership in 15-49 pop
+  pp        = 5/365,        # Partnership formation rate (partnerships/person/day)
+  i1.dur    = 20,           # 1 / γ₁ → Primary infection duration (days)
+  i2.dur    = 4.4,          # 1 / γ₂ → Recurrent infection duration (days)
+  l.dur     = 19.8          # 1 / σ  → Latent infection duration (days)
+)
+
+# 5b. Initial conditions to simulate 10 million people
+init <- init.dcm(
+  s.num    = 10000000,   # susceptibles
+  i1.num   = 10,         # primary infections
+  i2.num   = 0,          # reactivating infections
+  l.num    = 0,          # latent infections
+  v.num    = 0,          # vaccinated individuals
+  si1.flow = 0,          # S → I1 flow
+  li2.flow = 0,          # L → I2 flow
+  l.flow   = 0,          # I1 & I2 → L flow
+  v.flow   = 0           # Vaccination flow
+)
+
+control <- control.dcm(nsteps = 50*365, new.mod = hsv2AoN)
+
+mod <- dcm(param, init, control)
+mod
+
+# Mutate within the dcm object to add total population and prevalences
+mod <- mutate_epi(mod, num = s.num + i1.num + i2.num + l.num + v.num)
+mod <- mutate_epi(mod, 
+                  i1.prev = i1.num/num, 
+                  i2.prev = i2.num/num,
+                  l.prev  = l.num/num,
+                  il.prev = (i1.num + i2.num + l.num)/num)
+
+df <- as.data.frame(mod)
+head(df, 10)
+
+# Preliminary Plots including the equilibrium visual inspection
+vline_ <- 3000     #day vaccination starts
+
+# Estimated plateaus (mean of last 365 days) 
+plat_i1prev  <- mean(tail(df$i1.prev, 365))
+plat_i2prev  <- mean(tail(df$i2.prev, 365))
+plat_lprev   <- mean(tail(df$l.prev, 365))
+
+plat_si1flow <- mean(tail(df$si1.flow, 365))
+plat_li2flow <- mean(tail(df$li2.flow, 365))
+plat_lflow   <- mean(tail(df$l.flow, 365))
+plat_vflow   <- mean(tail(df$v.flow, 365))
+
+xlim_ <- c(0, 10000)
+
+#Cumulative Incidence of I1
+mod <- mutate_epi(mod, I1_cum_incidence = cumsum(si1.flow))
+#Cumulative Incidence of I2
+mod <- mutate_epi(mod, I2_cum_incidence = cumsum(li2.flow))
+#Cumulative Incidence of L
+mod <- mutate_epi(mod, L_cum_incidence = cumsum(l.flow))
+#Cumulative Incidence of V
+mod <- mutate_epi(mod, V_cum_incidence = cumsum(v.flow))
+df <- as.data.frame(mod)
+head(df, 10)
+
+#Plot Cumulative Incidence of all compartments
+
+#I1 Primary Infection
+par(mfrow=c(2,2))
+plot(mod, y="I1_cum_incidence",
+     main="Primary Infections Cumulative Incidence",
+     xlab="Time (days)",
+     ylab="Cumulative Incidence",
+     col="red", lwd=2, lty=1, xlim=xlim_)
+abline(h = plat_lprev, col = "grey", lty = 3)
+abline(v = vline_, col = "red", lty = 2)
+#I2 Recurrence Infection
+plot(mod, y="I2_cum_incidence",
+     main="Recurrent Infections Cumulative Incidence",
+     xlab="Time (days)",
+     ylab="Cumulative Incidence",
+     col="orange", lwd=2, lty=1, xlim=xlim_)
+abline(h = plat_lprev, col = "grey", lty = 3)
+abline(v = vline_, col = "red", lty = 2)
+#L Latent Infection
+plot(mod, y="L_cum_incidence",
+     main="Latent Infections Cumulative Incidence",
+     xlab="Time (days)",
+     ylab="Cumulative Incidence",
+     col="blue", lwd=2, lty=1, xlim=xlim_)
+abline(h = plat_lprev, col = "grey", lty = 3)
+abline(v = vline_, col = "red", lty = 2)
+#V Vaccinated
+plot(mod, y="V_cum_incidence",
+     main="Vaccinated Cumulative Incidence",
+     xlab="Time (days)",
+     ylab="Cumulative Incidence",
+     col="green", lwd=2, lty=1, xlim=xlim_)
+abline(h = plat_lprev, col = "grey", lty = 3)
+abline(v = vline_, col = "red", lty = 2)
+
+```
+
+approach 4
+
+```{r}
+# -------------------------------------------------------------------
+# Timed‑intervention HSV‑2 
+# No vaccination until day 3000
+# Vaccination campaign begins on day 3000
+#f=0, f.post=0.50, chi=0.75, cov_t=3*365 --> 2*365 (change from 3 years to 2 years to achieve desired vaccine coverage)
+# -------------------------------------------------------------------
+
+# Model function 
+hsv2AoN <- function(t, t0, parms) {
+with(as.list(c(t0, parms)), {
+
+  # Timed intervention: switch parameters at int.start
+  if (t >= int.start) {
+    p_1 <- p1.post                              # post‑campaign p1
+    p_2 <- -log(1 - f.post) / cov_t             # post‑campaign p2
+  } else {
+    p_2 <- -log(1 - f) / cov_t                  # baseline p2 (0 if f = 0)
+  }
+
+# 1. Track the total population size
+  num <- s.num + i1.num + i2.num + l.num + v.num
+  
+# 2. Define lambda and derived values
+  alpha   <- 1 - (1 - tau)^cpp                 
+  lambda  <- pp*alpha * ((i1.num + i2.num)/num)
+  gamma_1 <- 1/i1.dur
+  gamma_2 <- 1/i2.dur
+  sigma   <- 1/l.dur
+  
+# 3. Differential equations
+  dS <- (-lambda*s.num) - (p_2*chi*s.num) + ((1 - p_1*chi)*mu*num) - (kappa*s.num)
+  dI1 <- (lambda*s.num) - (gamma_1*i1.num) - (kappa*i1.num)
+  dI2 <- (sigma*l.num) - (gamma_2*i2.num) - (kappa*i2.num)
+  dL <- (gamma_1*i1.num) + (gamma_2*i2.num) - (sigma*l.num) - (kappa*l.num)
+  dV <- (p_1*chi*mu*num) + (p_2*chi*s.num) - (kappa*v.num)
+    
+# 4. Outputs
+  list(c(dS, dI1, dI2, dL, dV,
+         si1.flow = lambda*s.num,
+         li2.flow = sigma*l.num,
+         l.flow   = gamma_1*i1.num + gamma_2*i2.num,
+         v.flow   = p_1*chi*mu*num + p_2*chi*s.num))
+})
+}
+
+# 5. Inputs 
+# 5a. Model parameters
+param <- param.dcm(
+  mu        = 1/(34*365),   # (µ) Per-capita rate of entry (turning 15 y/o)
+  p_1       = 0,            # Fraction vaccinated before sexual debut (baseline)
+  f         = 0,            # Desired baseline adult coverage (set to 0 here)
+  p1.post   = 0,            # Fraction vaccinated before sexual debut after campaign
+  f.post    = 0.50,         # Adult catch‑up coverage after campaign
+  cov_t     = 2*365,        # Time horizon (days) to achieve f.post
+  int.start = 3000,         # Day vaccination campaign begins (post‑equilibrium)
+  chi       = 0.75,         # (ω) Vaccine efficacy or acceptance fraction
+  kappa     = 1/(34*365),   # (κ) Per-capita removal rate (aging out ~49 y/o)
+  tau       = 0.05,         # (τ) HSV-2 transmission probability per sex act
+  cpp       = 120,          # Avg # coital acts per partnership in 15-49 pop
+  pp        = 5/365,        # Partnership formation rate (partnerships/person/day)
+  i1.dur    = 20,           # 1 / γ₁ → Primary infection duration (days)
+  i2.dur    = 4.4,          # 1 / γ₂ → Recurrent infection duration (days)
+  l.dur     = 19.8          # 1 / σ  → Latent infection duration (days)
+)
+
+# 5b. Initial conditions to simulate 10 million people
+init <- init.dcm(
+  s.num    = 10000000,   # susceptibles
+  i1.num   = 10,         # primary infections
+  i2.num   = 0,          # reactivating infections
+  l.num    = 0,          # latent infections
+  v.num    = 0,          # vaccinated individuals
+  si1.flow = 0,          # S → I1 flow
+  li2.flow = 0,          # L → I2 flow
+  l.flow   = 0,          # I1 & I2 → L flow
+  v.flow   = 0           # Vaccination flow
+)
+
+control <- control.dcm(nsteps = 50*365, new.mod = hsv2AoN)
+
+mod <- dcm(param, init, control)
+mod
+
+# Mutate within the dcm object to add total population and prevalences
+mod <- mutate_epi(mod, num = s.num + i1.num + i2.num + l.num + v.num)
+mod <- mutate_epi(mod, 
+                  i1.prev = i1.num/num, 
+                  i2.prev = i2.num/num,
+                  l.prev  = l.num/num,
+                  il.prev = (i1.num + i2.num + l.num)/num)
+
+df <- as.data.frame(mod)
+head(df, 10)
+
+# Preliminary Plots including the equilibrium visual inspection
+vline_ <- 3000     #day vaccination starts
+
+# Estimated plateaus (mean of last 365 days) 
+plat_i1prev  <- mean(tail(df$i1.prev, 365))
+plat_i2prev  <- mean(tail(df$i2.prev, 365))
+plat_lprev   <- mean(tail(df$l.prev, 365))
+
+plat_si1flow <- mean(tail(df$si1.flow, 365))
+plat_li2flow <- mean(tail(df$li2.flow, 365))
+plat_lflow   <- mean(tail(df$l.flow, 365))
+plat_vflow   <- mean(tail(df$v.flow, 365))
+
+xlim_ <- c(0, 10000)
+
+#Cumulative Incidence of I1
+mod <- mutate_epi(mod, I1_cum_incidence = cumsum(si1.flow))
+#Cumulative Incidence of I2
+mod <- mutate_epi(mod, I2_cum_incidence = cumsum(li2.flow))
+#Cumulative Incidence of L
+mod <- mutate_epi(mod, L_cum_incidence = cumsum(l.flow))
+#Cumulative Incidence of V
+mod <- mutate_epi(mod, V_cum_incidence = cumsum(v.flow))
+df <- as.data.frame(mod)
+head(df, 10)
+
+#Plot Cumulative Incidence of all compartments
+
+#I1 Primary Infection
+par(mfrow=c(2,2))
+plot(mod, y="I1_cum_incidence",
+     main="Primary Infections Cumulative Incidence",
+     xlab="Time (days)",
+     ylab="Cumulative Incidence",
+     col="red", lwd=2, lty=1, xlim=xlim_)
+abline(h = plat_lprev, col = "grey", lty = 3)
+abline(v = vline_, col = "red", lty = 2)
+#I2 Recurrence Infection
+plot(mod, y="I2_cum_incidence",
+     main="Recurrent Infections Cumulative Incidence",
+     xlab="Time (days)",
+     ylab="Cumulative Incidence",
+     col="orange", lwd=2, lty=1, xlim=xlim_)
+abline(h = plat_lprev, col = "grey", lty = 3)
+abline(v = vline_, col = "red", lty = 2)
+#L Latent Infection
+plot(mod, y="L_cum_incidence",
+     main="Latent Infections Cumulative Incidence",
+     xlab="Time (days)",
+     ylab="Cumulative Incidence",
+     col="blue", lwd=2, lty=1, xlim=xlim_)
+abline(h = plat_lprev, col = "grey", lty = 3)
+abline(v = vline_, col = "red", lty = 2)
+#V Vaccinated
+plot(mod, y="V_cum_incidence",
+     main="Vaccinated Cumulative Incidence",
+     xlab="Time (days)",
+     ylab="Cumulative Incidence",
+     col="green", lwd=2, lty=1, xlim=xlim_)
+abline(h = plat_lprev, col = "grey", lty = 3)
+abline(v = vline_, col = "red", lty = 2)
+```
+
+approach 5
+
+```{r}
+# -------------------------------------------------------------------
+# Timed‑intervention HSV‑2 
+# No vaccination until day 3000
+# Vaccination campaign begins on day 3000
+#f=0, f.post=0.80, chi=0.90, cov_t=3*365 --> 2*365 (change from 3 years to 2 years to achieve desired vaccine coverage)
+#Increasing vaccine coverage (0.50—>0.80), vaccine efficacy (0.75—>0.90), AND shortening time it takes to reach this coverage (2 years)
+# -------------------------------------------------------------------
+
+# Model function 
+hsv2AoN <- function(t, t0, parms) {
+with(as.list(c(t0, parms)), {
+
+  # Timed intervention: switch parameters at int.start
+  if (t >= int.start) {
+    p_1 <- p1.post                              # post‑campaign p1
+    p_2 <- -log(1 - f.post) / cov_t             # post‑campaign p2
+  } else {
+    p_2 <- -log(1 - f) / cov_t                  # baseline p2 (0 if f = 0)
+  }
+
+# 1. Track the total population size
+  num <- s.num + i1.num + i2.num + l.num + v.num
+  
+# 2. Define lambda and derived values
+  alpha   <- 1 - (1 - tau)^cpp                 
+  lambda  <- pp*alpha * ((i1.num + i2.num)/num)
+  gamma_1 <- 1/i1.dur
+  gamma_2 <- 1/i2.dur
+  sigma   <- 1/l.dur
+  
+# 3. Differential equations
+  dS <- (-lambda*s.num) - (p_2*chi*s.num) + ((1 - p_1*chi)*mu*num) - (kappa*s.num)
+  dI1 <- (lambda*s.num) - (gamma_1*i1.num) - (kappa*i1.num)
+  dI2 <- (sigma*l.num) - (gamma_2*i2.num) - (kappa*i2.num)
+  dL <- (gamma_1*i1.num) + (gamma_2*i2.num) - (sigma*l.num) - (kappa*l.num)
+  dV <- (p_1*chi*mu*num) + (p_2*chi*s.num) - (kappa*v.num)
+    
+# 4. Outputs
+  list(c(dS, dI1, dI2, dL, dV,
+         si1.flow = lambda*s.num,
+         li2.flow = sigma*l.num,
+         l.flow   = gamma_1*i1.num + gamma_2*i2.num,
+         v.flow   = p_1*chi*mu*num + p_2*chi*s.num))
+})
+}
+
+# 5. Inputs 
+# 5a. Model parameters
+param <- param.dcm(
+  mu        = 1/(34*365),   # (µ) Per-capita rate of entry (turning 15 y/o)
+  p_1       = 0,            # Fraction vaccinated before sexual debut (baseline)
+  f         = 0,            # Desired baseline adult coverage (set to 0 here)
+  p1.post   = 0,            # Fraction vaccinated before sexual debut after campaign
+  f.post    = 0.80,         # Adult catch‑up coverage after campaign
+  cov_t     = 2*365,        # Time horizon (days) to achieve f.post
+  int.start = 3000,         # Day vaccination campaign begins (post‑equilibrium)
+  chi       = 0.90,         # (ω) Vaccine efficacy or acceptance fraction
+  kappa     = 1/(34*365),   # (κ) Per-capita removal rate (aging out ~49 y/o)
+  tau       = 0.05,         # (τ) HSV-2 transmission probability per sex act
+  cpp       = 120,          # Avg # coital acts per partnership in 15-49 pop
+  pp        = 5/365,        # Partnership formation rate (partnerships/person/day)
+  i1.dur    = 20,           # 1 / γ₁ → Primary infection duration (days)
+  i2.dur    = 4.4,          # 1 / γ₂ → Recurrent infection duration (days)
+  l.dur     = 19.8          # 1 / σ  → Latent infection duration (days)
+)
+
+# 5b. Initial conditions to simulate 10 million people
+init <- init.dcm(
+  s.num    = 10000000,   # susceptibles
+  i1.num   = 10,         # primary infections
+  i2.num   = 0,          # reactivating infections
+  l.num    = 0,          # latent infections
+  v.num    = 0,          # vaccinated individuals
+  si1.flow = 0,          # S → I1 flow
+  li2.flow = 0,          # L → I2 flow
+  l.flow   = 0,          # I1 & I2 → L flow
+  v.flow   = 0           # Vaccination flow
+)
+
+control <- control.dcm(nsteps = 50*365, new.mod = hsv2AoN)
+
+mod <- dcm(param, init, control)
+mod
+
+# Mutate within the dcm object to add total population and prevalences
+mod <- mutate_epi(mod, num = s.num + i1.num + i2.num + l.num + v.num)
+mod <- mutate_epi(mod, 
+                  i1.prev = i1.num/num, 
+                  i2.prev = i2.num/num,
+                  l.prev  = l.num/num,
+                  il.prev = (i1.num + i2.num + l.num)/num)
+
+df <- as.data.frame(mod)
+head(df, 10)
+
+# Preliminary Plots including the equilibrium visual inspection
+vline_ <- 3000     #day vaccination starts
+
+# Estimated plateaus (mean of last 365 days) 
+plat_i1prev  <- mean(tail(df$i1.prev, 365))
+plat_i2prev  <- mean(tail(df$i2.prev, 365))
+plat_lprev   <- mean(tail(df$l.prev, 365))
+
+plat_si1flow <- mean(tail(df$si1.flow, 365))
+plat_li2flow <- mean(tail(df$li2.flow, 365))
+plat_lflow   <- mean(tail(df$l.flow, 365))
+plat_vflow   <- mean(tail(df$v.flow, 365))
+
+xlim_ <- c(0, 10000)
+
+#Cumulative Incidence of I1
+mod <- mutate_epi(mod, I1_cum_incidence = cumsum(si1.flow))
+#Cumulative Incidence of I2
+mod <- mutate_epi(mod, I2_cum_incidence = cumsum(li2.flow))
+#Cumulative Incidence of L
+mod <- mutate_epi(mod, L_cum_incidence = cumsum(l.flow))
+#Cumulative Incidence of V
+mod <- mutate_epi(mod, V_cum_incidence = cumsum(v.flow))
+df <- as.data.frame(mod)
+head(df, 10)
+
+#Plot Cumulative Incidence of all compartments
+
+#I1 Primary Infection
+par(mfrow=c(2,2))
+plot(mod, y="I1_cum_incidence",
+     main="Primary Infections Cumulative Incidence",
+     xlab="Time (days)",
+     ylab="Cumulative Incidence",
+     col="red", lwd=2, lty=1, xlim=xlim_)
+abline(h = plat_lprev, col = "grey", lty = 3)
+abline(v = vline_, col = "red", lty = 2)
+#I2 Recurrence Infection
+plot(mod, y="I2_cum_incidence",
+     main="Recurrent Infections Cumulative Incidence",
+     xlab="Time (days)",
+     ylab="Cumulative Incidence",
+     col="orange", lwd=2, lty=1, xlim=xlim_)
+abline(h = plat_lprev, col = "grey", lty = 3)
+abline(v = vline_, col = "red", lty = 2)
+#L Latent Infection
+plot(mod, y="L_cum_incidence",
+     main="Latent Infections Cumulative Incidence",
+     xlab="Time (days)",
+     ylab="Cumulative Incidence",
+     col="blue", lwd=2, lty=1, xlim=xlim_)
+abline(h = plat_lprev, col = "grey", lty = 3)
+abline(v = vline_, col = "red", lty = 2)
+#V Vaccinated
+plot(mod, y="V_cum_incidence",
+     main="Vaccinated Cumulative Incidence",
+     xlab="Time (days)",
+     ylab="Cumulative Incidence",
+     col="green", lwd=2, lty=1, xlim=xlim_)
+abline(h = plat_lprev, col = "grey", lty = 3)
+abline(v = vline_, col = "red", lty = 2)
+```
+
+mimic lola's approach
+
+```{r}
+# -------------------------------------------------------------------
+# Timed‑intervention HSV‑2 
+# No vaccination until equilibrium (~ day 3000)
+# Vaccination campaign begins on day 3000
+# -------------------------------------------------------------------
+
+# Model function 
+library(EpiModel)
+hsv2AoN <- function(t, t0, parms) {
+  with(as.list(c(t0, parms)), {
+    
+# Timed intervention: switch parameters at int.start
+    if (t >= int.start) {
+      p_1 <- p1.post
+      p_2 <- -log(1 - f.post) / cov_t
+    } else {
+      p_2 <- -log(1 - f) / cov_t
+    }
+
+# Total population size
+    num <- s.num + i1.num + i2.num + l.num + v.num
+
+    # Force of infection and transition rates
+    alpha   <- 1 - (1 - tau)^cpp
+    lambda  <- pp * alpha * ((i1.num + i2.num) / num)
+    gamma_1 <- 1 / i1.dur
+    gamma_2 <- 1 / i2.dur
+    sigma   <- 1 / l.dur
+
+# Differential equations
+    dS <- (-lambda * s.num) - (p_2 * chi * s.num) + ((1 - p_1 * chi) * mu * num) - (kappa * s.num)
+    dI1 <- (lambda * s.num) - (gamma_1 * i1.num) - (kappa * i1.num)
+    dI2 <- (sigma * l.num) - (gamma_2 * i2.num) - (kappa * i2.num)
+    dL <- (gamma_1 * i1.num + gamma_2 * i2.num) - (sigma * l.num) - (kappa * l.num)
+    dV <- (p_1 * chi * mu * num + p_2 * chi * s.num) - (kappa * v.num)
+
+# Outputs
+    list(c(dS, dI1, dI2, dL, dV,
+           si1.flow = lambda * s.num,
+           li2.flow = sigma * l.num,
+           l.flow   = gamma_1 * i1.num + gamma_2 * i2.num,
+           v.flow   = p_1 * chi * mu * num + p_2 * chi * s.num))
+  })
+}
+
+#init conditions
+init <- init.dcm(
+  s.num = 10000000,  # susceptibles
+  i1.num = 10,       # primary infections
+  i2.num = 0,        # recurrent infections
+  l.num = 0,         # latent infections
+  v.num = 0,         # vaccinated
+  si1.flow = 0,
+  li2.flow = 0,
+  l.flow = 0,
+  v.flow = 0
+)
+
+#control 
+control <- control.dcm(nsteps = 50 * 365, new.mod = hsv2AoN)
+
+mod <- dcm(param, init, control)
+mod
+
+# Mutate within the dcm object to add total population and prevalences
+mod <- mutate_epi(mod, num = s.num + i1.num + i2.num + l.num + v.num)
+mod <- mutate_epi(mod, 
+                  i1.prev = i1.num/num, 
+                  i2.prev = i2.num/num,
+                  l.prev  = l.num/num,
+                  il.prev = (i1.num + i2.num + l.num)/num)
+
+df <- as.data.frame(mod)
+head(df, 10)
+
+# Preliminary Plots including the equilibrium visual inspection
+vline_ <- 3000     #day vaccination starts
+
+#loop across coverage levels
+fpost_vals <- c(0, 0.5, 0.75, 1.0)
+results <- data.frame(f.post = fpost_vals, I1_cum = NA)
+
+for (i in 1:length(fpost_vals)) {
+  f_val <- fpost_vals[i]
+
+  param_i <- param.dcm(
+    mu        = 1 / (34 * 365),
+    p_1       = 0,
+    f         = 0,
+    p1.post   = 0,
+    f.post    = f_val,
+    cov_t     = 3 * 365,
+    int.start = 3000,
+    chi       = 0.75,
+    kappa     = 1 / (34 * 365),
+    tau       = 0.05,
+    cpp       = 120,
+    pp        = 5 / 365,
+    i1.dur    = 20,
+    i2.dur    = 4.4,
+    l.dur     = 19.8
+  )
+
+#run model
+  mod_i <- dcm(param_i, init, control)
+
+#calculate cumulative incidence of I1
+  mod_i <- mutate_epi(mod_i, I1_cum_incidence = cumsum(si1.flow))
+  df_i <- as.data.frame(mod_i)
+
+#final cumulative incidence
+  results$I1_cum[i] <- tail(df_i$I1_cum_incidence, 1)
+}
+
+#calculate NIA and PIA 
+baseline <- results$I1_cum[results$f.post == 0]
+results$NIA <- baseline - results$I1_cum
+results$PIA <- results$NIA / baseline * 100
+
+#plot
+library(ggplot2)
+#filter out baseline (f.post = 0)
+plot_results <- subset(results, f.post != 0)
+
+#format coverage labels as percent
+plot_results$CoverageLabel <- paste0(plot_results$f.post * 100, "%")
+
+#plot bar chart
+#order CoverageLabel 0-100
+plot_results$CoverageLabel <- factor(
+  paste0(plot_results$f.post * 100, "%"),
+  levels = c("50%", "75%", "100%")  # set order explicitly
+)
+ggplot(plot_results, aes(x = CoverageLabel, y = NIA, fill = CoverageLabel)) +
+  geom_bar(stat = "identity", color = "black", width = 0.7) +
+  geom_text(aes(label = format(NIA, big.mark = ",")), 
+            vjust = -0.5, size = 5, fontface = "bold") +
+  scale_fill_manual(values = c("#d6eaf8", "#aed6f1", "#5dade2")) +  # Custom colors
+  labs(title = "Number Infections Averted (NIA): Catch-Up Campaign",
+       x = "Coverage Level",
+       y = "Number of Infections Averted") + 
+       ylim (0,25000000) +
+  theme_minimal(base_size = 14) +
+  theme(legend.position = "none",
+        plot.title = element_text(hjust = 0.5, face = "bold"),
+        axis.title.x = element_text(face = "bold"),
+        axis.title.y = element_text(face = "bold"))
+
+
+
+library(ggplot2)
+ggplot(plot_results, aes(x = CoverageLabel, y = PIA, fill = CoverageLabel)) +
+  geom_bar(stat = "identity", color = "black", width = 0.7) +
+  geom_text(aes(label = paste0(round(PIA, 1), "%")),
+            vjust = -0.5, size = 5, fontface = "bold") +
+  scale_fill_manual(values = c("#d6eaf8", "#aed6f1", "#5dade2")) +
+  labs(title = "Percent of Infections Averted (PIA): Catch-Up Campaign",
+       x = "Coverage Level",
+       y = "PIA (%)") +
+    ylim(0,100)+
+  theme_minimal(base_size = 14) +
+  theme(legend.position = "none",
+        plot.title = element_text(hjust = 0.5, face = "bold"),
+        axis.title.x = element_text(face = "bold"),
+        axis.title.y = element_text(face = "bold"))
+
+
+
+print(results)
+```
+
+## Truncation Piece
+
+```{r}
+
+# Vaccination campaign begins on 6500 days. We can definitely cut the initial 2000 days.
+
+# Model function 
+hsv2AoN <- function(t, t0, parms) {
+with(as.list(c(t0, parms)), {
+
+  # Timed intervention: switch parameters at int.start
+  if (t >= int.start) {
+    p_1 <- p1.post                              # post‑campaign p1
+    p_2 <- -log(1 - f.post) / cov_t             # post‑campaign p2
+  } else {
+    p_2 <- -log(1 - f) / cov_t                  # baseline p2 (0 if f = 0)
+  }
+
+# 1. Track the total population size
+  num <- s.num + i1.num + i2.num + l.num + v.num
+  
+# 2. Define lambda and derived values
+  alpha   <- 1 - (1 - tau)^cpp                 
+  lambda  <- pp*alpha * ((i1.num + i2.num)/num)
+  gamma_1 <- 1/i1.dur
+  gamma_2 <- 1/i2.dur
+  sigma   <- 1/l.dur
+  
+# 3. Differential equations
+  dS <- (-lambda*s.num) - (p_2*chi*s.num) + ((1 - p_1*chi)*mu*num) - (kappa*s.num)
+  dI1 <- (lambda*s.num) - (gamma_1*i1.num) - (kappa*i1.num)
+  dI2 <- (sigma*l.num) - (gamma_2*i2.num) - (kappa*i2.num)
+  dL <- (gamma_1*i1.num) + (gamma_2*i2.num) - (sigma*l.num) - (kappa*l.num)
+  dV <- (p_1*chi*mu*num) + (p_2*chi*s.num) - (kappa*v.num)
+    
+# 4. Outputs
+  list(c(dS, dI1, dI2, dL, dV,
+         si1.flow = lambda*s.num,
+         li2.flow = sigma*l.num,
+         l.flow   = gamma_1*i1.num + gamma_2*i2.num,
+         v.flow   = p_1*chi*mu*num + p_2*chi*s.num))
+})
+}
+
+# 5. Inputs 
+# 5a. Model parameters
+param <- param.dcm(
+  mu        = 1/(34*365),   # (µ) Per-capita rate of entry (turning 15 y/o)
+  p_1       = 0,            # Fraction vaccinated before sexual debut (baseline)
+  f         = 0,            # Desired baseline adult coverage (set to 0 here)
+  p1.post   = 0.80,         # Fraction vaccinated before sexual debut after campaign
+  f.post    = 0.50,         # Adult catch‑up coverage after campaign
+  cov_t     = 3*365,        # Time horizon (days) to achieve f.post
+  int.start = 6500,         # Day vaccination campaign begins (post‑equilibrium)
+  chi       = 0.75,         # (ω) Vaccine efficacy or acceptance fraction
+  kappa     = 1/(34*365),   # (κ) Per-capita removal rate (aging out ~49 y/o)
+  tau       = 0.05,         # (τ) HSV-2 transmission probability per sex act
+  cpp       = 120,          # Avg # coital acts per partnership in 15-49 pop
+  pp        = 5/365,        # Partnership formation rate (partnerships/person/day)
+  i1.dur    = 20,           # 1 / γ₁ → Primary infection duration (days)
+  i2.dur    = 4.4,          # 1 / γ₂ → Recurrent infection duration (days)
+  l.dur     = 19.8          # 1 / σ  → Latent infection duration (days)
+)
+
+# 5b. Initial conditions to simulate 10 million people
+init <- init.dcm(
+  s.num    = 10000000,   # susceptibles
+  i1.num   = 10,         # primary infections
+  i2.num   = 0,          # reactivating infections
+  l.num    = 0,          # latent infections
+  v.num    = 0,          # vaccinated individuals
+  si1.flow = 0,          # S → I1 flow
+  li2.flow = 0,          # L → I2 flow
+  l.flow   = 0,          # I1 & I2 → L flow
+  v.flow   = 0           # Vaccination flow
+)
+
+control <- control.dcm(nsteps = 50*365, new.mod = hsv2AoN)
+
+mod <- dcm(param, init, control)
+mod
+
+# 5c. Add truncation code. ALL PIECES AFTERWARDS MOD IS REPLACED WITH MOD2 AND DF IS REPLACED WITH DF2 TO ELIMINATE THE 1st 2000 DAYS.
+
+mod2 <- truncate_sim(mod, at = 2000)
+df2 <- as.data.frame (mod2)
+print(df2)
+plot (mod2)
+mod2$control$nsteps
+
+# Mutate within the dcm object to add total population and prevalences
+mod2 <- mutate_epi(mod2, num = s.num + i1.num + i2.num + l.num + v.num)
+mod2 <- mutate_epi(mod2, 
+                  i1.prev = i1.num/num, 
+                  i2.prev = i2.num/num,
+                  l.prev  = l.num/num,
+                  il.prev = (i1.num + i2.num + l.num)/num)
+
+df2 <- as.data.frame(mod2)
+head(df, 10)
+
+# Preliminary Plots including the equilibrium visual inspection
+vline_ <- 6500 # approximate equilibrium day to mark
+
+# Estimated plateaus (mean of last 365 days) 
+plat_i1prev  <- mean(tail(df$i1.prev, 365))
+plat_i2prev  <- mean(tail(df$i2.prev, 365))
+plat_lprev   <- mean(tail(df$l.prev, 365))
+
+plat_si1flow <- mean(tail(df$si1.flow, 365))
+plat_li2flow <- mean(tail(df$li2.flow, 365))
+plat_lflow   <- mean(tail(df$l.flow, 365))
+plat_vflow   <- mean(tail(df$v.flow, 365))
+
+# WE WILL HAVE TO CHANGE XLIM_ FROM 2000 to 10000
+xlim_ <- c(0, 10000)
+
+# Prevalence plot (all stages)
+par(mfrow = c(1, 1), mar = c(4, 4, 3, 2), mgp = c(2.5, 1, 0))
+plot(mod2, y = c("i1.prev", "i2.prev", "l.prev"),
+     main = "HSV-2 Infection Stage Prevalences (Proportions)",
+     ylab = "Proportion of Total Population", xlab = "Time (days)",
+     col = c("firebrick", "darkorange", "steelblue"),
+     lwd = 2, lty = 1, legend = "bottomright", run = 1, xlim = xlim_)
+abline(h = plat_lprev, col = "grey", lty = 3)
+abline(v = vline_, col = "red", lty = 2)
+
+# Flow plot (all flows)
+par(mfrow = c(1, 1), mar = c(4, 4, 3, 2), mgp = c(2.5, 1, 0))
+plot(mod2, y = c("si1.flow", "li2.flow", "l.flow", "v.flow"),
+     main = "Daily Incidence Flows Between Compartments",
+     ylab = "Individuals per Day", xlab = "Time (days)",
+     col = c("purple", "forestgreen", "deepskyblue3", "gray40"),
+     lwd = 2, lty = 1, legend = "bottomright", run = 1, xlim = xlim_)
+abline(h = plat_lflow, col = "grey60", lty = 3, lwd = 2)
+abline(v = vline_, col = "red", lty = 2)
+
+# I1 prevalence
+plot(mod2, y = "i1.prev", col = "firebrick", lwd = 2,
+     xlab = "Time (days)", ylab = "Proportion",
+     main = "Prevalence of Primary Infection (I1)",
+     ylim = c(0, 0.02), xlim = xlim_)
+abline(h = plat_i1prev, col = "grey", lty = 3)
+abline(v = vline_, col = "red", lty = 2)
+
+# I2 prevalence
+plot(mod2, y = "i2.prev", col = "darkorange", lwd = 2,
+     xlab = "Time (days)", ylab = "Proportion",
+     main = "Prevalence of Reactivating Infections (I2)",
+     ylim = c(0, 0.30), xlim = xlim_)
+abline(h = plat_i2prev, col = "grey", lty = 3)
+abline(v = vline_, col = "red", lty = 2)
+
+# Latent prevalence
+plot(mod2, y = "l.prev", col = "steelblue", lwd = 2,
+     xlab = "Time (days)", ylab = "Proportion",
+     main = "Prevalence of Latent Infections (L)",
+     ylim = c(0, 1))
+abline(h = plat_lprev, col = "grey", lty = 3)
+abline(v = vline_, col = "red", lty = 2)
+
+# S → I1 flow
+plot(mod2, y = "si1.flow", col = "purple", lwd = 2,
+     xlab = "Time (days)", ylab = "Individuals per Day",
+     main = "Flow from S → I1 (New Primary Infections)",
+     xlim = xlim_)
+abline(h = plat_si1flow, col = "grey60", lty = 3, lwd = 2)
+abline(v = vline_, col = "red", lty = 2)
+
+# L → I2 flow
+plot(mod2, y = "li2.flow", col = "forestgreen", lwd = 2,
+     xlab = "Time (days)", ylab = "Individuals per Day",
+     main = "Flow from L → I2 (Reactivations)",
+     xlim = xlim_)
+abline(h = plat_li2flow, col = "grey60", lty = 3, lwd = 2)
+abline(v = vline_, col = "red", lty = 2)
+
+# I1 & I2 → L flow
+plot(mod2, y = "l.flow", col = "deepskyblue3", lwd = 2,
+     xlab = "Time (days)", ylab = "Individuals per Day",
+     main = "Flow from I1 & I2 → L (Back to Latency)",
+     xlim = xlim_)
+abline(h = plat_lflow, col = "grey60", lty = 3, lwd = 2)
+abline(v = vline_, col = "red", lty = 2)
+
+# Vaccination flow
+plot(mod2, y = "v.flow", col = "gray40", lwd = 2,
+     xlab = "Time (days)", ylab = "Individuals per Day",
+     main = "Flow into Vaccination (V)",
+     xlim = xlim_)
+abline(h = plat_vflow, col = "grey60", lty = 3, lwd = 2)
+abline(v = vline_, col = "red", lty = 2)
+```
+
+catch-up campaign\*\*\*\*\*\*\*\*\*\*\*\*\*\*\*
+
+```{r}
+# -------------------------------------------------------------------
+# Timed‑intervention HSV‑2 
+# No vaccination until day 3000
+# Vaccination campaign begins on day 3000
+#f=0, f.post=0, 0.50, 0.75, 1.0
+# -------------------------------------------------------------------
+
+# Model function 
+hsv2AoN <- function(t, t0, parms) {
+with(as.list(c(t0, parms)), {
+
+  # Timed intervention: switch parameters at int.start
+  if (t >= int.start) {
+    p_1 <- p1.post                              # post‑campaign p1
+    p_2 <- -log(1 - f.post) / cov_t             # post‑campaign p2
+  } else {
+    p_2 <- -log(1 - f) / cov_t                  # baseline p2 (0 if f = 0)
+  }
+
+# 1. Track the total population size
+  num <- s.num + i1.num + i2.num + l.num + v.num
+  
+# 2. Define lambda and derived values
+  alpha   <- 1 - (1 - tau)^cpp                 
+  lambda  <- pp*alpha * ((i1.num + i2.num)/num)
+  gamma_1 <- 1/i1.dur
+  gamma_2 <- 1/i2.dur
+  sigma   <- 1/l.dur
+  
+# 3. Differential equations
+  dS <- (-lambda*s.num) - (p_2*chi*s.num) + ((1 - p_1*chi)*mu*num) - (kappa*s.num)
+  dI1 <- (lambda*s.num) - (gamma_1*i1.num) - (kappa*i1.num)
+  dI2 <- (sigma*l.num) - (gamma_2*i2.num) - (kappa*i2.num)
+  dL <- (gamma_1*i1.num) + (gamma_2*i2.num) - (sigma*l.num) - (kappa*l.num)
+  dV <- (p_1*chi*mu*num) + (p_2*chi*s.num) - (kappa*v.num)
+    
+# 4. Outputs
+  list(c(dS, dI1, dI2, dL, dV,
+         si1.flow = lambda*s.num,
+         li2.flow = sigma*l.num,
+         l.flow   = gamma_1*i1.num + gamma_2*i2.num,
+         v.flow   = p_1*chi*mu*num + p_2*chi*s.num))
+})
+}
+
+# 5. Inputs 
+# 5a. Model parameters
+param <- param.dcm(
+  mu        = 1/(34*365),   # (µ) Per-capita rate of entry (turning 15 y/o)
+  p_1       = 0,            # Fraction vaccinated before sexual debut (baseline)
+  f         = 0,            # Desired baseline adult coverage (set to 0 here)
+  p1.post   = 0,            # Fraction vaccinated before sexual debut after campaign
+  f.post    = c(0, 0.50, 0.75, 0.9999),         # Adult catch‑up coverage after campaign
+  cov_t     = 3*365,        # Time horizon (days) to achieve f.post
+  int.start = 3000,         # Day vaccination campaign begins (post‑equilibrium)
+  chi       = 0.75,         # (ω) Vaccine efficacy or acceptance fraction
+  kappa     = 1/(34*365),   # (κ) Per-capita removal rate (aging out ~49 y/o)
+  tau       = 0.05,         # (τ) HSV-2 transmission probability per sex act
+  cpp       = 120,          # Avg # coital acts per partnership in 15-49 pop
+  pp        = 5/365,        # Partnership formation rate (partnerships/person/day)
+  i1.dur    = 20,           # 1 / γ₁ → Primary infection duration (days)
+  i2.dur    = 4.4,          # 1 / γ₂ → Recurrent infection duration (days)
+  l.dur     = 19.8          # 1 / σ  → Latent infection duration (days)
+)
+
+# 5b. Initial conditions to simulate 10 million people
+init <- init.dcm(
+  s.num    = 10000000,   # susceptibles
+  i1.num   = 10,         # primary infections
+  i2.num   = 0,          # reactivating infections
+  l.num    = 0,          # latent infections
+  v.num    = 0,          # vaccinated individuals
+  si1.flow = 0,          # S → I1 flow
+  li2.flow = 0,          # L → I2 flow
+  l.flow   = 0,          # I1 & I2 → L flow
+  v.flow   = 0           # Vaccination flow
+)
+
+control <- control.dcm(nsteps = 50*365, new.mod = hsv2AoN)
+
+mod <- dcm(param, init, control)
+mod
+
+# Mutate within the dcm object to add total population and prevalences
+mod <- mutate_epi(mod, num = s.num + i1.num + i2.num + l.num + v.num)
+mod <- mutate_epi(mod, 
+                  i1.prev = i1.num/num, 
+                  i2.prev = i2.num/num,
+                  l.prev  = l.num/num,
+                  il.prev = (i1.num + i2.num + l.num)/num)
+
+df <- as.data.frame(mod)
+head(df, 10)
+
+# Preliminary Plots including the equilibrium visual inspection
+vline_ <- 3000     #day vaccination starts
+
+xlim_ <- c(0, 10000)
+
+#Cumulative Incidence of I1
+mod <- mutate_epi(mod, I1_cum_incidence = cumsum(si1.flow))
+
+df_full_fpost<-as.data.frame(mod) #full dataframe with all f.post values
+print(head(df_full_fpost,10))
+library("dplyr")
+df_full_fpost <- df_full_fpost %>% mutate(cum_incidence = cumsum(si1.flow))
+
+df_fpost0   <- subset(df_full_fpost, run == 1) 
+print(head(df_fpost0,10))
+
+df_fpost50   <- subset(df_full_fpost, run == 2) 
+print(head(df_fpost50,10))
+
+df_fpost75 <- subset(df_full_fpost, run == 3)
+print(head(df_fpost75,10))
+
+df_fpost100 <- subset(df_full_fpost, run == 4)
+print(head(df_fpost100,10))
+
+#cumulative incidence
+#fpost=0
+cum_incidence_fpost0 <- sum(df_fpost0$si1.flow)
+print(cum_incidence_fpost0) #20,364,267
+
+#fpost=0.50
+cum_incidence_fpost50 <- sum(df_fpost50$si1.flow)
+print(cum_incidence_fpost50) #11,329,160
+
+#f.post=0.75
+cum_incidence_fpost75 <- sum(df_fpost75$si1.flow)
+print(cum_incidence_fpost75) #4,836,303
+
+#fpost=1.0
+cum_incidence_fpost100 <- sum(df_fpost100$si1.flow)
+print(cum_incidence_fpost100) #226,405.9
+
+#NUMBER infections averted
+#comparing the lower vaccination coverage (50%) scenario to the reference (0%) scenario aka fpost=0.5 vs 0
+infections_averted_50 <- cum_incidence_fpost0 - cum_incidence_fpost50
+print(infections_averted_50) #9,035,107
+#comparing the middle vaccination coverage (75%) to the reference (0%) scenario aka fpost=.75 vs 0
+infections_averted_75 <- cum_incidence_fpost0 - cum_incidence_fpost75
+print(infections_averted_75) #15,527,964
+#comparing the high vaccination coverage (100%) to the reference (0%) scenario aka fpost=1.0 vs 0
+infections_averted_100 <- cum_incidence_fpost0 - cum_incidence_fpost100
+print(infections_averted_100) #20,137,861
+
+#PERCENT infections averted
+#50% vs 0
+percented_averted_50<-(infections_averted_50 / cum_incidence_fpost0)*100
+print(percented_averted_50) #44.36745%
+#75% vs 0
+percented_averted_75<-(infections_averted_75 / cum_incidence_fpost0)*100
+print(percented_averted_75) #76.25103%
+#100% vs 0
+percented_averted_100<-(infections_averted_100 / cum_incidence_fpost0)*100
+print(percented_averted_100) #98.88822%
+
+#plots
+library(ggplot2)
+library(dplyr)
+
+coverage_levels <- c("50%", "75%", "100%")
+NIA_values <- c(9035107, 15527964, 20137861)
+PIA_values <- c(44.37, 76.25, 98.89)
+
+#data frame
+nia_pia_df <- data.frame(
+  Coverage = factor(coverage_levels, levels = coverage_levels),
+  NIA = NIA_values,
+  PIA = PIA_values
+)
+
+#NIA Plot
+library(scales)
+ggplot(nia_pia_df, aes(x = Coverage, y = NIA, fill = Coverage)) +
+  geom_bar(stat = "identity", color = "black") +
+  geom_text(aes(label = comma(NIA)), vjust = -0.5, size = 5)+
+  labs(
+    title = "Number Infections Averted (NIA): Catch-Up",
+    x = "Coverage Level",
+    y = "Number of Infections Averted"
+  ) +
+    scale_y_continuous(labels = comma, 
+                       limits = c(0, max(NIA_values) * 1.1))+
+  theme_minimal() +
+  theme(legend.position = "none")
+
+# PIA Plot
+ggplot(nia_pia_df, aes(x = Coverage, y = PIA, fill = Coverage)) +
+  geom_bar(stat = "identity", color = "black") +
+  geom_text(aes(label = paste0(round(PIA, 1), "%")), vjust = -0.5, size = 5) +
+  labs(
+    title = "Percent Infections Averted (PIA): Catch-Up",
+    x = "Coverage Level",
+    y = "Percent of Infections Averted"
+  ) +
+  ylim(0, max(PIA_values) * 1.1) +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+
+
+```
+
+contour plot
+
+```{r}
+library(EpiModel)
+library(dplyr)
+library(tidyverse)
+library(metR)
+library(viridis)
+# define a basic, closed population SI model
+hsv2AoN <- function(t, t0, parms) {
+with(as.list(c(t0, parms)), {
+
+  # Timed intervention: switch parameters at int.start
+  if (t >= int.start) {
+    p_1 <- p1.post                              # post‑campaign p1
+    p_2 <- -log(1 - f.post) / cov_t             # post‑campaign p2
+  } else {
+    p_2 <- -log(1 - f) / cov_t                  # baseline p2 (0 if f = 0)
+  }
+
+# 1. Track the total population size
+  num <- s.num + i1.num + i2.num + l.num + v.num
+  
+# 2. Define lambda and derived values
+  alpha   <- 1 - (1 - tau)^cpp                 
+  lambda  <- pp*alpha * ((i1.num + i2.num)/num)
+  gamma_1 <- 1/i1.dur
+  gamma_2 <- 1/i2.dur
+  sigma   <- 1/l.dur
+  
+# 3. Differential equations
+  dS <- (-lambda*s.num) - (p_2*chi*s.num) + ((1 - p_1*chi)*mu*num) - (kappa*s.num)
+  dI1 <- (lambda*s.num) - (gamma_1*i1.num) - (kappa*i1.num)
+  dI2 <- (sigma*l.num) - (gamma_2*i2.num) - (kappa*i2.num)
+  dL <- (gamma_1*i1.num) + (gamma_2*i2.num) - (sigma*l.num) - (kappa*l.num)
+  dV <- (p_1*chi*mu*num) + (p_2*chi*s.num) - (kappa*v.num)
+    
+# 4. Outputs
+  list(c(dS, dI1, dI2, dL, dV,
+         si1.flow = lambda*s.num,
+         li2.flow = sigma*l.num,
+         l.flow   = gamma_1*i1.num + gamma_2*i2.num,
+         v.flow   = p_1*chi*mu*num + p_2*chi*s.num))
+})
+}
+
+#define the grid of values for f.post and chi
+f.post <- seq(0, 0.999, 0.05)
+chi <- seq(0, 1, 0.05)
+grid <- expand.grid(f.post = f.post, chi = chi)
+
+#model parameterization with fixed parameters
+param <- param.dcm(
+  mu        = 1/(34*365),   # (µ) Per-capita rate of entry (turning 15 y/o)
+  p_1       = 0,            # Fraction vaccinated before sexual debut (baseline)
+  f         = 0,            # Desired baseline adult coverage (set to 0 here)
+  p1.post   = 0,            # Fraction vaccinated before sexual debut after campaign
+  #f.post    = c(0, 0.50, 0.75, 0.9999),         # Adult catch‑up coverage after campaign
+  cov_t     = 3*365,        # Time horizon (days) to achieve f.post
+  int.start = 3000,         # Day vaccination campaign begins (post‑equilibrium)
+  #chi       = 0.75,         # (ω) Vaccine efficacy or acceptance fraction
+  kappa     = 1/(34*365),   # (κ) Per-capita removal rate (aging out ~49 y/o)
+  tau       = 0.05,         # (τ) HSV-2 transmission probability per sex act
+  cpp       = 120,          # Avg # coital acts per partnership in 15-49 pop
+  pp        = 5/365,        # Partnership formation rate (partnerships/person/day)
+  i1.dur    = 20,           # 1 / γ₁ → Primary infection duration (days)
+  i2.dur    = 4.4,          # 1 / γ₂ → Recurrent infection duration (days)
+  l.dur     = 19.8,          # 1 / σ  → Latent infection duration (days)
+  f.post    = grid$f.post,
+  chi       = grid$chi
+)
+
+# 5b. Initial conditions to simulate 10 million people
+init <- init.dcm(
+  s.num    = 10000000,   # susceptibles
+  i1.num   = 10,         # primary infections
+  i2.num   = 0,          # reactivating infections
+  l.num    = 0,          # latent infections
+  v.num    = 0,          # vaccinated individuals
+  si1.flow = 0,          # S → I1 flow
+  li2.flow = 0,          # L → I2 flow
+  l.flow   = 0,          # I1 & I2 → L flow
+  v.flow   = 0           # Vaccination flow
+)
+
+control <- control.dcm(nsteps = 50*365, new.mod = hsv2AoN)
+mod <- dcm(param, init, control)
+mod
+
+# Convert to dataframe and calculate cumulative incidence (primary infections)
+df <- as.data.frame(mod)
+df_summary <- df %>%
+  group_by(run) %>%
+  summarise(cumlinc = sum(si1.flow)) %>%
+  mutate(f.post = grid$f.post, chi = grid$chi)
+
+# Plot contour of cumulative incidence
+ggplot(df_summary, aes(x = f.post, y = chi)) +
+  geom_raster(aes(fill = cumlinc), interpolate = TRUE) +
+  geom_contour(aes(z = cumlinc), color = "white", alpha = 0.5, linewidth = 0.5) +
+  geom_text_contour(aes(z = cumlinc), stroke = 0.1) +
+  scale_x_continuous(labels = scales::percent_format(accuracy = 1)) +
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
+  labs(
+    x = "Vaccine Coverage (f.post)",
+    y = "Vaccine Efficacy (chi)",
+    fill = "Cumulative Infections",
+    title = "Contour Plot of Cumulative HSV-2 Infections by Coverage & Efficacy"
+  ) +
+  scale_fill_viridis_c(option = "D") +
+  theme_minimal()
+
+
+
+###########################
+#mod <- mutate_epi(mod, num = s.num + i1.num + i2.num + l.num + v.num)
+#mod <- mutate_epi(mod, 
+           #       i1.prev = i1.num/num, 
+           #       i2.prev = i2.num/num,
+            #      l.prev  = l.num/num,
+            #      il.prev = (i1.num + i2.num + l.num)/num)
+#mod<-mutate_epi(mod, i1.inc=cumsum(si1.flow))
+
+#df <- as.data.frame(mod)
+#head(df, 10)
+
+# define two parameters that should vary
+#f.post <- seq(1, 2, 0.05)
+#chi <- seq(0.01, 0.2, 0.01)
+
+# create a grid of interaction parameter values
+# each row of grid correspond to unique combination of each parameter
+#grid <- expand.grid(f.post = f.post,
+#                    chi = chi)
+#head(grid, 25)
+#table(grid)
+
+# this is length(f.post) x length(chi) unique combinations
+#nrow(grid)
+
+# input each vector as model parameter, pulling from the grid data.frame
+#param <- param.dcm(chi = grid$chi,
+#                   f.post = grid$f.post,
+#                   rec.rate = 0.02)
+#mod <- dcm(param, init, control)
+
+# plotting time series of prevalence across runs
+#plot(mod, y = "i1.prev", legend = FALSE, lwd = 0.5)
+
+# convert model object to data frame
+#df <- as.data.frame(mod)
+#head(df)
+
+
+# create a data frame that groups data by parameter set (run)
+# then calculates cumulative incidence in each set
+# then adds in the values of the two varying parameters
+#df2 <- group_by(df, run) %>%
+ # summarise(cumlinc = sum(si1.flow)) %>%
+#  cbind(f.post = grid$f.post) %>%
+ # cbind(chi = grid$chi)
+#head(df2)
+
+# fancy contour plot; lots of graphics options to explore!
+#ggplot(df2, aes(f.post, chi)) +
+ # geom_raster(aes(fill = cumlinc), interpolate = TRUE) +
+  #geom_contour(aes(z = cumlinc), col = "white", alpha = 0.5, lwd = 0.5) +
+#  geom_text_contour(aes(z = cumlinc), stroke = 0.1) +
+ # theme_minimal() +
+  #scale_y_continuous(expand = c(0, 0)) +
+#  scale_x_continuous(expand = c(0, 0)) +
+ # labs(x = "Coverage Level", y = "Vaccine Efficacy") +
+  #scale_fill_viridis(discrete = FALSE, alpha = 1, option = "D", direction = 1)
+
+# ggsave("example.pdf")
+
+```
+
+######catch-up contour plot######
+
+```{r}
+library(EpiModel)
+library(dplyr)
+library(tidyverse)
+library(metR)
+library(viridis)
+
+# Define HSV-2 model with vaccination intervention
+hsv2AoN <- function(t, t0, parms) {
+  with(as.list(c(t0, parms)), {
+    if (t >= int.start) {
+      p_1 <- p1.post
+      p_2 <- -log(1 - f.post) / cov_t
+    } else {
+      p_2 <- -log(1 - f) / cov_t
+    }
+
+    num     <- s.num + i1.num + i2.num + l.num + v.num
+    alpha   <- 1 - (1 - tau)^cpp                 
+    lambda  <- pp * alpha * ((i1.num + i2.num) / num)
+    gamma_1 <- 1 / i1.dur
+    gamma_2 <- 1 / i2.dur
+    sigma   <- 1 / l.dur
+    
+    dS <- (-lambda * s.num) - (p_2 * chi * s.num) + ((1 - p_1 * chi) * mu * num) - (kappa * s.num)
+    dI1 <- (lambda * s.num) - (gamma_1 * i1.num) - (kappa * i1.num)
+    dI2 <- (sigma * l.num) - (gamma_2 * i2.num) - (kappa * i2.num)
+    dL <- (gamma_1 * i1.num) + (gamma_2 * i2.num) - (sigma * l.num) - (kappa * l.num)
+    dV <- (p_1 * chi * mu * num) + (p_2 * chi * s.num) - (kappa * v.num)
+
+    list(c(dS, dI1, dI2, dL, dV,
+           si1.flow = lambda * s.num,
+           li2.flow = sigma * l.num,
+           l.flow   = gamma_1 * i1.num + gamma_2 * i2.num,
+           v.flow   = p_1 * chi * mu * num + p_2 * chi * s.num))
+  })
+}
+
+# Define parameter grid (f.post and chi from 0 to ~1)
+f.post <- seq(0, 0.999, length=20)
+chi <- seq(0, 1, length=20)
+grid <- expand.grid(f.post = f.post, chi = chi)
+
+# Define model parameters
+param <- param.dcm(
+  mu        = 1/(34*365),
+  p_1       = 0,
+  f         = 0,
+  p1.post   = 0,
+  cov_t     = 3*365,
+  int.start = 3000,
+  kappa     = 1/(34*365),
+  tau       = 0.05,
+  cpp       = 120,
+  pp        = 5/365,
+  i1.dur    = 20,
+  i2.dur    = 4.4,
+  l.dur     = 19.8,
+  f.post    = grid$f.post,
+  chi       = grid$chi
+)
+
+# Initial conditions
+init <- init.dcm(
+  s.num    = 10000000,
+  i1.num   = 10,
+  i2.num   = 0,
+  l.num    = 0,
+  v.num    = 0,
+  si1.flow = 0,
+  li2.flow = 0,
+  l.flow   = 0,
+  v.flow   = 0
+)
+
+# Run the model
+control <- control.dcm(nsteps = 50 * 365, new.mod = hsv2AoN)
+mod <- dcm(param, init, control)
+
+# Convert to dataframe and summarize cumulative incidence
+df <- as.data.frame(mod)
+df_summary <- df %>%
+  group_by(run) %>%
+  summarise(cumlinc = sum(si1.flow)) %>%
+  mutate(f.post = grid$f.post, chi = grid$chi)
+
+# Contour plot
+ggplot(df_summary, aes(x = f.post, y = chi)) +
+  geom_raster(aes(fill = cumlinc), interpolate = TRUE) +
+  geom_contour(aes(z = cumlinc), color = "white", alpha = 0.5, linewidth = 0.5) +
+  geom_text_contour(aes(z = cumlinc), stroke = 0.1) +
+    geom_abline(intercept = 0, slope = 1, linetype = "dashed", color = "red") +
+  scale_x_continuous(
+      labels = scales::percent_format(accuracy = 1)) +
+  scale_y_continuous(
+      labels = scales::percent_format(accuracy = 1)) +
+  labs(
+    x = "Vaccine Coverage",
+    y = "Vaccine Efficacy",
+    fill = "Cumulative Incidence of Primary Infections",
+    title = "Cumulative HSV-2 Primary Infections by Coverage & Efficacy"
+  ) +
+  scale_fill_viridis_c(option = "D") +
+  theme_minimal()
+
+```
+
+------------------------------------------------------------------------
+
+########sexual debut campaign contour plot#######
+
+```{r}
+library(EpiModel)
+library(dplyr)
+library(tidyverse)
+library(metR)
+library(viridis)
+
+# Define HSV-2 model with vaccination intervention
+hsv2AoN <- function(t, t0, parms) {
+with(as.list(c(t0, parms)), {
+if (t >= int.start) {
+p_1 <- p1.post# Vary p1.post based on defined values
+p_2 <- -log(1 - f.post) / cov_t# f.post is constant at 0
+} else {
+p_2 <- -log(1 - f) / cov_t# Same as above for pre-vaccination
+}
+
+num<- s.num + i1.num + i2.num + l.num + v.num
+alpha<- 1 - (1 - tau)^cpp
+lambda<- pp * alpha * ((i1.num + i2.num) / num)
+gamma_1 <- 1 / i1.dur
+gamma_2 <- 1 / i2.dur
+sigma<- 1 / l.dur
+
+dS <- (-lambda * s.num) - (p_2 * chi * s.num) + ((1 - p_1 * chi) * mu * num) - (kappa * s.num)
+dI1 <- (lambda * s.num) - (gamma_1 * i1.num) - (kappa * i1.num)
+dI2 <- (sigma * l.num) - (gamma_2 * i2.num) - (kappa * i2.num)
+dL <- (gamma_1 * i1.num) + (gamma_2 * i2.num) - (sigma * l.num) - (kappa * l.num)
+dV <- (p_1 * chi * mu * num) + (p_2 * chi * s.num) - (kappa * v.num)
+
+list(c(dS, dI1, dI2, dL, dV,
+si1.flow = lambda * s.num,
+li2.flow = sigma * l.num,
+l.flow= gamma_1 * i1.num + gamma_2 * i2.num,
+v.flow= p_1 * chi * mu * num + p_2 * chi * s.num))
+})
+}
+
+# Define parameter grid (p1.post and chi)
+p1.post <- seq(0, 0.999, 0.05) # Vary p1.post
+chi <- seq(0, 1, 0.1)# Vaccine efficacy from 0 to 1
+grid <- expand.grid(p1.post = p1.post, chi = chi)
+
+# Define model parameters
+param <- param.dcm(
+mu= 1/(34*365),
+p_1= 0,
+f= 0,
+p1.post= grid$p1.post,# Set baseline p1.post to 0
+cov_t= 3*365,
+int.start = 3000,
+kappa= 1/(34*365),
+tau= 0.05,
+cpp= 120,
+pp= 5/365,
+i1.dur= 20,
+i2.dur= 4.4,
+l.dur= 19.8,
+f.post= 0,# f.post is fixed at 0
+chi= grid$chi# Vary chi based on the grid
+)
+
+# Initial conditions
+init <- init.dcm(
+s.num= 10000000,
+i1.num= 10,
+i2.num= 0,
+l.num= 0,
+v.num= 0,
+si1.flow = 0,
+li2.flow = 0,
+l.flow= 0,
+v.flow= 0
+)
+
+# Run the model
+control <- control.dcm(nsteps = 50 * 365, new.mod = hsv2AoN)
+mod <- dcm(param, init, control)
+
+# Convert to dataframe and summarize cumulative incidence
+df <- as.data.frame(mod)
+df_summary <- df %>%
+  group_by(run) %>%
+  summarise(cumlinc = sum(si1.flow)) %>%
+  mutate(
+    p1.post = grid$p1.post,
+    chi = grid$chi
+  )
+
+# Contour plot
+ggplot(df_summary, aes(x = p1.post, y = chi)) +
+geom_raster(aes(fill = cumlinc), interpolate = TRUE) +
+geom_contour(aes(z = cumlinc), color = "white", alpha = 0.5, linewidth = 0.5) +
+geom_text_contour(aes(z = cumlinc), stroke = 0.1) +
+scale_x_continuous(
+labels = scales::percent_format(accuracy = 1)) +
+scale_y_continuous(
+labels = scales::percent_format(accuracy = 1)) +
+labs(
+x = "Vaccine Coverage",
+y = "Vaccine Efficacy",
+fill = "Cumulative Incidence of Primary Infections",
+title = "Cumulative HSV-2 Primary Infections by Coverage & Efficacy"
+) +
+scale_fill_viridis_c(option = "D") +
+theme_minimal()
+```
+
+
+
+
+
+```{r}
+# -------------------------------------------------------------------
+# Timed‑intervention HSV‑2 
+# No vaccination until day 3000
+# Vaccination campaign begins on day 3000
+#f=0, f.post=0.75-.90, cov_t=3*365, chi=.75-.90 trying all 4: 75 by 75, 75 by 90, 90 by 75, 90 by 90
+# -------------------------------------------------------------------
+
+# Model function 
+hsv2AoN <- function(t, t0, parms) {
+with(as.list(c(t0, parms)), {
+
+  # Timed intervention: switch parameters at int.start
+  if (t >= int.start) {
+    p_1 <- p1.post                              # post‑campaign p1
+    p_2 <- -log(1 - f.post) / cov_t             # post‑campaign p2
+  } else {
+    p_2 <- -log(1 - f) / cov_t                  # baseline p2 (0 if f = 0)
+  }
+
+# 1. Track the total population size
+  num <- s.num + i1.num + i2.num + l.num + v.num
+  
+# 2. Define lambda and derived values
+  alpha   <- 1 - (1 - tau)^cpp                 
+  lambda  <- pp*alpha * ((i1.num + i2.num)/num)
+  gamma_1 <- 1/i1.dur
+  gamma_2 <- 1/i2.dur
+  sigma   <- 1/l.dur
+  
+# 3. Differential equations
+  dS <- (-lambda*s.num) - (p_2*chi*s.num) + ((1 - p_1*chi)*mu*num) - (kappa*s.num)
+  dI1 <- (lambda*s.num) - (gamma_1*i1.num) - (kappa*i1.num)
+  dI2 <- (sigma*l.num) - (gamma_2*i2.num) - (kappa*i2.num)
+  dL <- (gamma_1*i1.num) + (gamma_2*i2.num) - (sigma*l.num) - (kappa*l.num)
+  dV <- (p_1*chi*mu*num) + (p_2*chi*s.num) - (kappa*v.num)
+    
+# 4. Outputs
+  list(c(dS, dI1, dI2, dL, dV,
+         si1.flow = lambda*s.num,
+         li2.flow = sigma*l.num,
+         l.flow   = gamma_1*i1.num + gamma_2*i2.num,
+         v.flow   = p_1*chi*mu*num + p_2*chi*s.num))
+})
+}
+
+# 5. Inputs 
+# 5a. Model parameters
+param <- param.dcm(
+  mu        = 1/(34*365),   # (µ) Per-capita rate of entry (turning 15 y/o)
+  p_1       = 0,            # Fraction vaccinated before sexual debut (baseline)
+  f         = 0,            # Desired baseline adult coverage (set to 0 here)
+  p1.post   = 0,            # Fraction vaccinated before sexual debut after campaign
+  f.post    = 0.90,         # Adult catch‑up coverage after campaign
+  cov_t     = 3*365,        # Time horizon (days) to achieve f.post
+  int.start = 3000,         # Day vaccination campaign begins (post‑equilibrium)
+  chi       = 0.90,         # (ω) Vaccine efficacy or acceptance fraction
+  kappa     = 1/(34*365),   # (κ) Per-capita removal rate (aging out ~49 y/o)
+  tau       = 0.05,         # (τ) HSV-2 transmission probability per sex act
+  cpp       = 120,          # Avg # coital acts per partnership in 15-49 pop
+  pp        = 5/365,        # Partnership formation rate (partnerships/person/day)
+  i1.dur    = 20,           # 1 / γ₁ → Primary infection duration (days)
+  i2.dur    = 4.4,          # 1 / γ₂ → Recurrent infection duration (days)
+  l.dur     = 19.8          # 1 / σ  → Latent infection duration (days)
+)
+
+# 5b. Initial conditions to simulate 10 million people
+init <- init.dcm(
+  s.num    = 10000000,   # susceptibles
+  i1.num   = 10,         # primary infections
+  i2.num   = 0,          # reactivating infections
+  l.num    = 0,          # latent infections
+  v.num    = 0,          # vaccinated individuals
+  si1.flow = 0,          # S → I1 flow
+  li2.flow = 0,          # L → I2 flow
+  l.flow   = 0,          # I1 & I2 → L flow
+  v.flow   = 0           # Vaccination flow
+)
+
+control <- control.dcm(nsteps = 50*365, new.mod = hsv2AoN)
+
+mod <- dcm(param, init, control)
+mod
+
+# Mutate within the dcm object to add total population and prevalences
+mod <- mutate_epi(mod, num = s.num + i1.num + i2.num + l.num + v.num)
+mod <- mutate_epi(mod, 
+                  i1.prev = i1.num/num, 
+                  i2.prev = i2.num/num,
+                  l.prev  = l.num/num,
+                  il.prev = (i1.num + i2.num + l.num)/num)
+
+df <- as.data.frame(mod)
+head(df, 10)
+
+# Preliminary Plots including the equilibrium visual inspection
+vline_ <- 3000     #day vaccination starts
+
+# Estimated plateaus (mean of last 365 days) 
+plat_i1prev  <- mean(tail(df$i1.prev, 365))
+plat_i2prev  <- mean(tail(df$i2.prev, 365))
+plat_lprev   <- mean(tail(df$l.prev, 365))
+
+plat_si1flow <- mean(tail(df$si1.flow, 365))
+plat_li2flow <- mean(tail(df$li2.flow, 365))
+plat_lflow   <- mean(tail(df$l.flow, 365))
+plat_vflow   <- mean(tail(df$v.flow, 365))
+
+xlim_ <- c(0, 10000)
+
+#Cumulative Incidence of I1
+mod <- mutate_epi(mod, I1_cum_incidence = cumsum(si1.flow))
+#Cumulative Incidence of I2
+mod <- mutate_epi(mod, I2_cum_incidence = cumsum(li2.flow))
+#Cumulative Incidence of L
+mod <- mutate_epi(mod, L_cum_incidence = cumsum(l.flow))
+#Cumulative Incidence of V
+mod <- mutate_epi(mod, V_cum_incidence = cumsum(v.flow))
+df <- as.data.frame(mod)
+head(df, 10)
+```
+
