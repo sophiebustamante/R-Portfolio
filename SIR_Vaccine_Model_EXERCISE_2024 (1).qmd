@@ -1,6 +1,6 @@
 ---
 title: "EPI 569 -- Week 7 Exercise : Modeling vaccination"
-author: "YOUR NAME HERE"
+author: "Sophie Bustamante"
 date: "DATE"
 format:
   html:
