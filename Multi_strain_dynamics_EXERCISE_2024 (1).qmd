@@ -1,6 +1,6 @@
 ---
 title: "EPI 569 -- Exercise 4: Multi Strain Dynamics"
-author: "YOUR NAME HERE"
+author: "Sophie Bustamante"
 date: "November 5, 2023"
 date-modified: "October 31, 2024"
 format:
