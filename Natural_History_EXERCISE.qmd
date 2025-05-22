@@ -1,6 +1,6 @@
 ---
 title: "EPI 569 -- Exercise 1: Natural history of infectious diseases"
-author: "Ben Lopman, Elizabeth Rogawski McQuade"
+author: "Sophie Bustamante"
 format: html
 editor: visual
 ---
