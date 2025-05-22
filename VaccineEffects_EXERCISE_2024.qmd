@@ -1,0 +1,216 @@
+---
+title: "EPI 569 -- Week 6 Exercise: Vaccine Effects"
+author: "Sophie Bustamante"
+date: "October 8, 2024"
+date-modified: "October 7, 2024"
+format:
+  html:
+    embed-resources: true
+widescreen: true
+smaller: true
+toc: true
+toc-expand: true
+---
+
+```{r setup, include = FALSE, echo = FALSE, eval = TRUE}
+#| label: setup
+#| include: false
+#| echo: false
+#| eval: true
+set.seed(3)
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(kableExtra)
+library(ggplot2)
+library(splitstackshape)
+```
+
+# Background 1
+
+A new vaccine to protect against influenza hospitalization has been introduced into a nursing home population. You have data on two nursing homes - one where the vaccine was not given to residents and one where it was. In the home where the vaccine was given to residents, about 50% of residents were vaccinated and about 50% were not. Over the course of the following winter, i.e. the "flu season," surveillance was conducted among nursing home residents who were hospitalized for influenza.
+
+The dataset 'vaccineeffects.csv' contains the following data:
+
+-   `STUDYID`: this is a unique ID for nursing home residents.
+
+-   `INTERVENTION_ARM`: binary indicator for which nursing home the resident is from (0=nursing home that did not receive vaccines, 1=nursing home that received vaccines)
+
+-   `VACCINATED`: binary indicator for whether individual resident was vaccinated (0=not vaccinated, 1=vaccinated)
+
+-   `CONFIRMED_CASE`: binary indicator for whether resident was a confirmed influenza case (0=not confirmed case, 1=confirmed case)
+
+```{r}
+#| echo: true
+set.seed(569) #do not change seed #
+# simulates dataset -- comment out to run again
+subjects <- 300
+ nh_residents <- expand.grid(studyid = seq(from = 1, to = subjects))
+ nh_residents %>%
+   mutate(intervention_arm = ifelse(studyid <= subjects/2, 0, 1)) %>% #half in intervention arm
+   mutate(vaccinated = ifelse(intervention_arm == 0, 0, rbinom(subjects,1,0.5))) %>%
+   mutate(confirmed_case = ifelse(intervention_arm == 0,
+                                rbinom(subjects,1,.5),
+                                ifelse(vaccinated == 0,
+                                       rbinom(subjects,1,0.31),
+                                       rbinom(subjects,1,0.16)))) -> nh_residents
+ write.csv(nh_residents, file = "vaccineeffects.csv")
+```
+
+```{r}
+nh_residents <- read.csv("https://raw.githubusercontent.com/blopman/epi569/master/vaccineeffects.csv")
+```
+
+## Question 1 \[2 pts\]
+
+Calculate the attack rates (**number of cases/number at-risk**) for the following (stratify or filter dataset)
+
+a.  Among everyone in the nursing home where the vaccine was introduced
+
+```{r}
+# enter your code here
+library(dplyr)
+vaxhome<-subset(nh_residents, intervention_arm %in% 1) #150 obs
+sum(vaxhome$confirmed_case==1) #37 cases
+37/150 #0.2466667--> 24.67%
+```
+
+**ANSWER BELOW: The attack rate among everyone in the nursing home with the vaccine program was 24.67%**
+
+b.  Among everyone in the nursing home where the vaccine was not introduced
+
+```{r}
+# enter your code here
+library(dplyr)
+unvaxhome<-subset(nh_residents, intervention_arm %in% 0) #150 obs
+sum(unvaxhome$confirmed_case==1) #75 cases
+75/150 #0.5-->50%
+```
+
+**ANSWER BELOW: The attack rate among everyone in the nursing home without the vaccine program was 50%**
+
+c.  In the nursing home where the vaccine was introduced, among vaccinated residents only
+
+```{r}
+# enter your code here
+sum(vaxhome$vaccinated==1) #77 vaccinated in this nursing home
+sum(vaxhome$confirmed_case==1 & vaxhome$vaccinated==1) #10 cases among vaccinated
+10/77 #0.1298701-->12.99%
+```
+
+**ANSWER BELOW: The attack rate among vaccinated residents in the nursing home with the vaccine program was 12.99%**
+
+d.  In the nursing home where the vaccine was introduced, among unvaccinated residents only
+
+```{r}
+# enter your code here
+sum(vaxhome$vaccinated==0) #73 vaccinated in this nursing home
+sum(vaxhome$confirmed_case==1 & vaxhome$vaccinated==0) #27 cases among vaccinated
+27/73 #0.369863-->36.99%
+```
+
+**ANSWER BELOW: The attack rate among unvaccinated residents in the nursing home with the vaccine program was 36.99%**
+
+## Question 2 \[2 pts\]
+
+Calculate the following effect measures \[2pts\]
+
+```{r}
+# enter your code here
+#I11=incidence among vaccinated indiv in vaccinated pop   
+#I10=incidence among unvaccinated indiv in vaccinated pop      
+#I0=incidence among unvaccinated indiv in unvaccinated pop   
+#I1=incidence among vaccinated individuals in the entire population 
+
+#A: Total effect (combination of being vaccinated and having vaccination program in population)
+#VEtotal=(1-(I11/I0))*100
+I11<-sum(vaxhome$confirmed_case==1 & vaxhome$vaccinated==1) / sum(vaxhome$vaccinated==1) #0.129
+I0<-sum(unvaxhome$confirmed_case==1 & unvaxhome$vaccinated==0) / sum(unvaxhome$vaccinated==0) #0.5
+(1-(I11/I0))*100  #74.03%
+
+#B: Overall effect (degree of protection of an average individual in a pop with a vaccination program to an avg indiv in a comparable pop with no vaccine)
+#VEoverall=(1-(I1/I0))*100
+I1<-sum(vaxhome$confirmed_case==1) / nrow(vaxhome) #0.246
+(1-(I1/I0))*100 #50.67%
+
+#C: Direct effect (degree of protection that vaccinated indivs receive from vaccination)
+#VEdirect=(1-(I11/I10))*100
+I10<-sum(vaxhome$confirmed_case==1 & vaxhome$vaccinated==0) / sum(vaxhome$vaccinated==0) #.3698
+(1-(I11/I10))*100  #64.89
+
+#D: Indirect effect (degree of protection that unvaccinated indivs receive in the presence vs absence of vaccine program)
+(1-(I10/I0))*100 #26.03%
+```
+
+**ANSWER BELOW**
+
+a.  Total effect: \_\_\_74.03%\_\_\_\_\_
+b.  Overall effect: \_\_\_50.67%\_\_\_
+c.  Direct effect: \_\_\_64.89%\_\_\_\_
+d.  Indirect effect: \_\_\_26.03%\_\_\_
+
+# Background 2
+
+Now, we are going to investigate whether vaccination has any effect on **infectiousness** (i.e. are vaccinated persons less or more likely to transmit compared to unvaccinated persons).
+
+The dataset 'contacts.csv' contains the following data:
+
+-   `STUDYID`: this is a unique ID for the nursing home residents with whom visitors (contacts) had contact (e.g. resident 1 made 7 contacts) (similar to household contact)
+
+-   `INDEX_VACCINATED`: binary indicator for whether individual resident (with whom visitors had contact) was vaccinated (0= not vaccinated, 1=vaccinated)
+
+-   `CONTACT_ILI`: binary indicator for whether a contact of the resident developed influenza like illness (ILI) (0= no symptoms of ILI, 1= ILI)
+
+You have data on all of the contacts between hospitalized cases from the nursing homes and their visitors (family and friends). Epidemiologists from the state health department recorded whether these contacts reported flu-like symptoms within 2 weeks of their nursing home contact.
+
+```{r}
+nh_contacts <- read.csv("https://raw.githubusercontent.com/blopman/epi569/master/contacts.csv")
+```
+
+## Question 3 \[2 pts\]
+
+Calculate the following:
+
+a.  The secondary attack rate among visitors who came in contact with confirmed cases, stratified by the vaccination status of the nursing home resident (i.e. index case). Specifically, calculate the secondary attack rate among visitors who came in contact with vaccinated cases and separately calculate the secondary attack rate among visitors who came in contact with unvaccinated cases. (filter/subset) SAR= \# cases / \# at risk
+
+```{r}
+# enter your code here
+sarvax <- nh_contacts %>% filter(index_vaccinated==1) #31 obs (at-risk)
+sum(sarvax$contact_ili==1) #3 cases
+#SAR= # cases / # at risk
+(3/31)*100 #9.68%
+
+sarunvax<-nh_contacts %>% filter (index_vaccinated==0) #304 obs (at-risk)
+sum(sarunvax$contact_ili==1) #55 cases
+#SAR= # cases / # at risk
+(55/304)*100 #18.09%
+```
+
+**ANSWER BELOW**
+
+Unvaccinated Index: \_\_18.09%\_\_\_\_
+
+Vaccinated Index: \_\_9.68%\_\_\_\_
+
+b.  Name at least one assumption in this calculation \[1pt\]
+
+**ANSWER BELOW: We are assuming we have identified all index cases and their vaccine status is correctly reported. Similarly, we are assuming we have identified all contacts and the contacts' symptoms are correct. We are also assuming contacts had similar types of contact, including proximity to index case and duration of exposure to index case. We're also assuming that influenza symptoms means influenza infection, as we don't have lab confirmation. Lastly, we assume that these secondary cases are from the nursing home and not another source.**
+
+## Question 4 \[2 pts\]
+
+Calculate the vaccine effectiveness for infectiousness.
+
+**Note**: *If you were going to calculate standard error and confidence intervals, you would have to take into account clustering, whereby there are many contacts per case. You may ignore clustering in your calculations.*
+
+```{r}
+# enter your code here
+#VEi=1-(SARvaccinated/SARunvaccinated)
+(1-(9.68/18.09))*100 #46.49%
+```
+
+**ANSWER BELOW: The vaccine effectiveness for infectiousness is 46.49%**
+
+## Question 5 \[2 pts\]
+
+Based on the effectiveness measures you have calculated, do you think there is evidence for indirect effects for this vaccine? If so, what is the evidence for indirect effects (i.e, which effect(s) that you calculated provides the evidence) and what is the likely mechanism (i.e., explain in words how the vaccine may be causing the indirect effect)?
+
+**ANSWER BELOW: I do think there is evidence for some indirect effects for this vaccine, as the degree of protection that unvaccinated individuals receive in the presence of this vaccine compared to in absence of vaccine program is 26.03%. Additionally, as the vaccine provides protection against infection, it thereby also prevents transmission, as uninfected individuals can't transmit. The secondary attack rate among visitors exposed to vaccinated index cases (9.68%) is substantially lower than that of those exposed to unvaccinated index cases (18.09%). Additionally, the vaccine effectiveness for infectiousness is 46.49%, which means that this vaccine reduces the infectiousness of vaccinated individuals by about 46.5% compared to unvaccinated individuals. This limits the spread of influenza, even among unvaccinated contacts, and is one mechanism causing the indirect effect. As the vaccine reduces the likelihood of infection and transmission, and reduces vaccinated people's infectiousness/viral load, unvaccinated people benefit from this vaccine too (indirect effect) as they're at a lower risk of becoming infected. Overall secondary illnesses are reduced due to the vaccine.**

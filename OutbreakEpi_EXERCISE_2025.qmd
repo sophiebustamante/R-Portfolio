@@ -1,0 +1,255 @@
+---
+title: "EPI 569: Homework 4 - Analysis of 2018/19 Ebola outbreak in Democratic Republic of Congo -- Severity and Epidemic Growth"
+author: "Sophie Bustamante" 
+date written: "8/27/2020"
+date revised: "9/17/2024"
+format: html
+widescreen: true
+smaller: true
+self-contained: TRUE
+toc: true
+toc-expand: true
+---
+
+```{r setup, include = TRUE, echo = TRUE, warning=FALSE}
+library(kableExtra, warn.conflicts=F, quietly=T)
+library(dplyr, warn.conflicts=F, quietly=T)
+library(ggplot2, warn.conflicts=F, quietly=T)
+library(earlyR, warn.conflicts=F, quietly=T)
+library(incidence, warn.conflicts=F, quietly=T)
+```
+
+# Background 1
+The second largest ever Ebola virus disease outbreak occurred in 2018/19 in the Democratic Republic of Congo.  For your reference, you can find the Situation Reports (SitRep) for the outbreak on the WHO website. 
+
+https://www.who.int/emergencies/diseases/ebola/drc-2019/situation-reports
+
+Since the start of the outbreak on 30 Apr 2018 until the end of September, there were 3,205 cases and 2,142 deaths were reported.  Here is the Epi curve to the end of Sept 2018.
+
+```{r, echo = TRUE}
+knitr::include_graphics("/Users/sophiabustamante/Downloads/drc_ebola_v2.png", dpi=10)
+```
+
+## Question 1
+
+What would have been the best time to intervene in this outbreak and why? 
+
+**ANSWER BELOW**  
+It would have been best to intervene when the initial increase happened, during July 2018 or earlier, assuming these were observed in real time. This could have contained the outbreak if infectious individuals/cases were quickly found and isolated, thus preventing further transmission early on. This time would have been easier for interventions to be successful as there were fewer cases.  
+
+# Background 2
+
+We'll now focus on the first few weeks of the outbreak. All the information you need for this exercise is contained below and in the data files in the links.
+
+```{r, include = TRUE, echo = TRUE}
+drc_ebola <- read.csv("https://raw.githubusercontent.com/blopman/epi569/master/DRC_Ebola_CFR.csv") # Read in the data
+```
+
+Here are the cases (Grey Bars) and deaths based on week of death (Blue Bars) and death based on week of case's onset (Black line) from the first few weeks of the outbreak
+
+```{r, include = TRUE, echo = TRUE, warning=FALSE}
+ggplot(drc_ebola, aes(x = Week)) +
+  geom_col(aes(y = Cases), fill = "grey") + 
+  geom_col(aes(y = Deaths._in_week), fill = "steelblue") + 
+  geom_line(aes(y = Deaths._from_onset_in_week), color = "black",  size = 1)
+```
+
+We can calculate and plot the crude CFR (Blue) and adjusted CFR (Black) as follows
+
+```{r, include = TRUE, echo = TRUE}
+drc_ebola %>% 
+  mutate(cum_cases = cumsum(Cases)) %>% 
+  mutate(cum_crude_deaths = cumsum(Deaths._in_week)) %>% 
+  mutate(cum_adjusted_deaths = cumsum(Deaths._from_onset_in_week)) %>% 
+  mutate(crude_cfr = cum_crude_deaths/cum_cases) %>% 
+  mutate(adjusted_cfr = cum_adjusted_deaths/cum_cases) -> drc_ebola
+
+ggplot(drc_ebola, aes(x = Week)) +
+  geom_line(aes(y = crude_cfr), color = "steelblue", size = 1) + 
+  geom_line(aes(y = adjusted_cfr), color = "black", size = 1) + 
+  ylab("Case fatality")
+```
+
+
+## Question 2
+
+a.    Explain the differences between the crude CFR and the adjusted CFR that is based on date of onset of the deceased case.
+
+**ANSWER BELOW** 
+The crude and adjusted CFR seem to be inverses of each other, and are the same for about week=6 to about week=7, and about week=25 to about week=26. The crude CFR starts at 0 and overall increases, while the adjusted CFR starts at 1 and overall decreases. At the end of the model, at week=26 both crude and adjusted CFR are equal to ~0.63. The crude CFR is low in the beginning because cases have not died (yet), thus making the CFR appear low. The adjusted CFR accounts for this lag. 
+
+b.    Why is the crude CFR lower than the adjusted CFR?
+
+**ANSWER BELOW**
+The crude CFR is lower than the adjusted CFR because of the delay in reporting deaths. This delay underestimates the crude CFR as there are fewer deaths (numerator) than in the adjusted CFR. The crude CFR at a given time= reported deaths/reported cases, while the adjusted CFR=reported deaths/cases adjusted for delay from onset to death. The crude CFR is more biased and approaches the truth more slowly. The crude CFR is underestimated as cases haven't had enough time to die yet.
+
+c.    Why does the adjusted CFR appear to decline in the last few weeks? 
+
+**ANSWER BELOW**
+This could be because the epidemic affected different groups differentialy, treatment improved, and/or there are fewer and fewer susceptibles in the population as transmission continues. This could also be because there are cases that are yet to become deaths, or have not yet been reported as deaths, thus decreasing the numerator. The adjusted CFR cannot get rid of this delay/lag between onset and death entirely and can't account for unknown outcomes. It is unlikely that there is an actual decrease in case fatality risk here.
+
+**Note:** *If we had line-lists of cases (which we do not here), we could also calculate the CFRs based on known outcomes (survived or died).*
+
+
+# Background 3 (make changes to code to see how it changes R0 calculation)
+
+Now, lets turn to calculating the $R_0$ from the initial growth rate from the beginning of the outbreak. First, import the case counts from the first few weeks of the outbreak.
+
+```{r, include = TRUE, echo = TRUE}
+r0_ebola <- read.csv("https://raw.githubusercontent.com/blopman/epi569/master/DRC_Ebola_week.csv")
+```
+
+```{r, include = TRUE, echo = T, warning=FALSE}
+ggplot(r0_ebola, aes(onset_week, cases)) + 
+  geom_bar(stat="identity") +
+  ggtitle("Plot of cases")
+```
+
+```{r, include = TRUE, echo = T, warning=FALSE}
+r0_ebola %>% 
+  mutate(log_cases = log(cases)) -> r0_ebola
+
+ggplot(r0_ebola, aes(onset_week, log_cases)) + 
+  geom_bar(stat="identity") +
+  ggtitle("Plot of log cases")
+```
+
+
+## Question 3
+
+a.    In order to calculate the basic reproductive number based on initial growth of the epidemic, which time interval would you use?
+
+**ANSWER BELOW**  
+I would use weeks 11-15 to calculate R0 based on the initial growth of the epidemic.
+
+b.    Why did you select this time?
+
+**ANSWER BELOW**
+I chose weeks 11-15 as this is where we see the start of exponential growth, and the susceptible population hasn't been depleted yet. In other words, it's early enough where there are plenty of cases to observe the infectiousness, as there is still ongoing transmission, control measures aren't in place yet, and there are still many susceptibles in the population.
+
+Add those weeks by changing R code below:
+
+```{r}
+start_week <- 11 #change this number to appropriate time period to get R0
+end_week <- 15 #change this number to appropriate time period to get R0
+```
+
+
+## Question 4
+
+What is your calculation for the basic reproductive number?
+
+**ANSWER BELOW**
+With the interval of weeks 11-15, the R0=3.84
+ 
+```{r, include = TRUE, echo = T, message=FALSE}
+r0_ebola %>% 
+  filter(onset_week>=start_week, onset_week <= end_week) %>% 
+  splitstackshape::expandRows("cases", drop = FALSE) %>% 
+  select(onset_week) %>% 
+  pull(onset_week) -> linelist
+i <- incidence(linelist)
+
+mu <- 3 # mean in weeks                     #Generation time of ebola is about 21 days or 3 weeks
+sigma <- 3 # standard deviation in weeks
+
+res <- get_R(i, si_mean = mu, si_sd = sigma)
+R_val <- sample_R(res, 1000)
+mean(R_val)
+
+#This plot shows the likelihood distribution of the R estimate
+plot(res) 
+
+```
+
+
+## Question 5
+
+Next, <u>test at least 2 different scenarios</u> to see how your estimate of $R_0$ changes when selecting different start/end weeks for exponential growth. Potential scenarios to consider might include:
+
+-   What happens if you include time before or after when exponential growth is occurring?
+-   What happens if you include periods of decreasing case counts? 
+
+Summarize your findings in the table shell below, rounding $R_0$ to 2 decimal places (n.nn). Briefly describe (~2-3 sentences) how your choice of time period affects the $R_0$ estimate.
+
+```{r, message=FALSE}
+##Scenario 1
+# Choose start/end week. Change values of scen1_start and scen1_end
+
+scen1_start <- 4 #XX
+scen1_end <-  10 #YY
+
+# Estimate Ro
+r0_ebola %>% 
+  filter(onset_week>=scen1_start, onset_week <= scen1_end) %>% 
+  splitstackshape::expandRows("cases", drop = FALSE) %>% 
+  select(onset_week) %>% 
+  pull(onset_week) -> linelist
+i <- incidence(linelist)
+
+mu <- 3 # mean in weeks                     #Generation time of ebola is about 21 days or 3 weeks
+sigma <- 3 # standard deviation in weeks
+
+res <- get_R(i, si_mean = mu, si_sd = sigma)
+scen1_Ro <- sample_R(res, 1000)
+mean(scen1_Ro)
+
+```
+
+```{r, message=FALSE}
+##Scenario 2
+# Choose different start/end week. Change values of scen2_start and scen2_end
+scen2_start <- 18 #WW
+scen2_end <- 23 #ZZ
+
+# Estimate Ro
+r0_ebola %>% 
+  filter(onset_week>=scen2_start, onset_week <= scen2_end) %>% 
+  splitstackshape::expandRows("cases", drop = FALSE) %>% 
+  select(onset_week) %>% 
+  pull(onset_week) -> linelist
+i <- incidence(linelist)
+
+mu <- 3 # mean in weeks                     #Generation time of ebola is about 21 days or 3 weeks
+sigma <- 3 # standard deviation in weeks
+
+res <- get_R(i, si_mean = mu, si_sd = sigma)
+scen2_Ro <- sample_R(res, 1000)
+mean(scen2_Ro)
+
+
+```
+
+```{r, message=FALSE}
+##Scenario 3 (OPTIONAL)
+# Choose different start/end week. Change values of scen3_start and scen3_end
+scen3_start <- 12 #MM
+scen3_end <- 17 #NN
+
+# Estimate Ro
+r0_ebola %>% 
+  filter(onset_week>=scen3_start, onset_week <= scen3_end) %>% 
+  splitstackshape::expandRows("cases", drop = FALSE) %>% 
+  select(onset_week) %>% 
+  pull(onset_week) -> linelist
+i <- incidence(linelist)
+
+mu <- 3 # mean in weeks                     #Generation time of ebola is about 21 days or 3 weeks
+sigma <- 3 # standard deviation in weeks
+
+res <- get_R(i, si_mean = mu, si_sd = sigma)
+scen3_Ro <- sample_R(res, 1000)
+mean(scen3_Ro)
+```
+ 
+**ANSWER BELOW** 
+ 
+| Scenario       | Start Week | End Week |  Ro  |
+|----------------|------------|----------|------|
+| Example:       |  0         | 30       | 1.16 |
+| 1              | 4          | 10       | 1.39 |
+| 2              | 18         | 23       | 0.97 |
+| 3 (optional)   | 12         | 17       | 3.38 |
+
+A time interval that's before exponential growth occurs (week 4-10) makes R0 fairly low (1.39), an interval period of decreasing case counts (week 18-23) makes R0 below the threshold needed for an epidemic to occur (0.97), and a time interval of exponential growth that includes the peak (week 12-17) makes R0 higher (3.38). Early in the outbreak during exponential growth and before interventions, R0 will be high. Later on, when interventions are in place and/or the susceptible population has decreased, R0 will be lower.
+

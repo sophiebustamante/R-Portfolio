@@ -1,0 +1,223 @@
+---
+title: "EPI 569 -- Week 11 Exercise: Study designs and IDs as exposures"
+author: "Sophie Bustamante"
+date: "DATE"
+format:
+  html:
+    embed-resources: true
+widescreen: true
+smaller: true
+toc: true
+toc-expand: false
+---
+
+```{r setup, include = FALSE, echo = FALSE, eval = TRUE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+```
+
+## Background
+
+-   This exercise uses data from the MAL-ED cohort study as previously last week.
+-   We will compare the effect of sex on diarrhea risk as estimated by different study designs nested in the larger cohort study.
+-   We will also estimate the effect of diarrhea on length-for-age z-score at 2 years of age (a marker of height)
+
+## The dataset 'maled2023.csv' contains the following data:
+
+-   **pid:** this is a unique ID for children.
+
+-   **Country_ID:** site the child was from: BGD=Dhaka, Bangladesh; INV=Vellore, India
+
+-   **female:** binary indicator for whether individual was female (0=no (male), 1=yes)
+
+-   **age:** age in days for that observation
+
+-   **incidentdiarrhea:** binary indicator for the first day of diarrhea in a diarrhea episode
+
+-   **diarrhea:** binary indicator for diarrhea on this day (1=yes, 0=no)
+
+-   **laz:** length-for-age z-score (measure of height) at 2 years of age
+
+## The dataset created below, 'wide', has one row per child with several summary variables
+
+-   **logpersontime:** log(total days child was observed in the first 2 years of life)
+
+-   **totalepisodes:** total number of diarrhea episodes observed over the first two years of life
+
+-   **longprevalence:** longitudinal prevalence of diarrhea over the first two years of life (days with diarrhea/days observed)
+
+```{r include=FALSE}
+maled <- read.csv("https://raw.githubusercontent.com/blopman/epi569/master/maled2023.csv")
+```
+
+```{r}
+head(maled)
+
+a <- maled %>% 
+  group_by(pid) %>% 
+  summarize(logpersontime = log(n()),
+            totalepisodes = sum(incidentdiarrhea),
+            longprevalence = sum(diarrhea)/n()) %>% 
+  mutate(anydiarrhea = ifelse(totalepisodes >=1,1,0))
+
+b <- maled %>% 
+  group_by(pid) %>% 
+  slice(1) %>% 
+  select(pid, Country_ID, female, laz)
+
+wide <- left_join(b,a) #one obs per personID
+
+```
+
+## We are going to create a nested case-control study from the MAL-ED study with 50 cases and 50 controls. Cases are sampled from all children with at least one diarrhea episode. Controls are sampled from all children with no diarrhea episodes. Individuals in the study are included in the 'casecontrol' dataset. (what kind of measure and model appropriate for nested case-control)
+
+```{r}
+
+#randomly select 50 cases
+cases <- wide %>% 
+  filter(anydiarrhea == 1)
+set.seed(1234)
+index = sample(1:nrow(cases), 50,replace = FALSE)
+selectedcases <- cases[index,]
+
+#randomly select 50 controls
+controls <- wide %>% 
+  filter(anydiarrhea == 0)
+set.seed(4567)
+index = sample(1:nrow(controls), 50,replace = FALSE)
+selectedcontrols <- controls[index,]
+
+casecontrol <- rbind(selectedcases,selectedcontrols)
+
+```
+
+## 1. Estimate the association between female sex and diarrhea, adjusting for site, in the case-control study \[3pts\]
+
+### 1a. What is the measure of effect (incidence rate ratio, risk ratio, prevalence ratio, prevalence odds ratio) that you are estimating in this study (based on the study design and how cases/controls were sampled)?
+
+**ANSWER: We are estimating the prevalence odds ratio in this study as any diarrhea is being collected at the end of the study based on total episodes.**
+
+### 1b. Use logistic regression to calculate the estimate of the measure of effect with a 95% confidence interval.
+
+```{r}
+#add your code here
+m1<-glm(anydiarrhea~ female + as.factor(Country_ID), family=binomial(link="logit"), 
+        data=casecontrol)
+summary(m1)
+
+irr <- as.data.frame(cbind(exp(coef(m1)),exp(confint(m1))))
+#1.224869 (0.5322387, 2.819646) --> 1.22 (0.53, 2.82)
+```
+
+**ANSWER: Adjusting for site, the prevalence odds ratio of diarrhea among females compared to males is** **1.22 (0.53, 2.82).**
+
+### 1c. How does this estimate differ from your estimate in the full cohort study from the previous exercise (question 4)? Comment on magnitude (i.e., effect size) and precision (i.e., the width of the confidence intervals) in your answer.
+
+**ANSWER: This prevalence odds ratio (1.22) is greater in magnitude/further from the null than the prevalence odds ratio in the full cohort study (1.09). This prevalence odds ratio's CIs (0.53, 2.82) are less precise than that of the full cohort study (0.62, 1.90).**
+
+## We are now going to create a nested cross-sectional study from the MAL-ED study. For this study, at 12 months of age, we will measure diarrhea prevalence in the prior week among all enrolled children (variable name: 'anydiarrhea'). Individuals in the study are included in the 'cross_section' dataset.
+
+```{r}
+#subset data to the week prior to 12 months of age
+a <- maled %>% 
+  filter(age> 358 & age<= 365)
+
+cross_section <- a %>% 
+  group_by(pid, Country_ID, female, laz) %>% 
+  summarize(longprevalence = sum(diarrhea)/n()) %>% 
+  mutate(anydiarrhea = ifelse(longprevalence >0,1,0)) %>% 
+  select(-longprevalence)
+
+```
+
+## 2. Estimate the association between female sex and diarrhea, adjusting for site, in the cross-sectional study \[4pts\]
+
+### 2a. What measures of effect (incidence rate ratio, risk ratio, prevalence ratio, prevalence odds ratio) could you estimate in this study (based on the study design)?
+
+**ANSWER: We could estimate the prevalence ratio or the prevalence odds ratio with this study design as we are getting a snapshot of disease burden.**
+
+### 2b. Use log-binomial regression to calculate the prevalence ratio with a 95% confidence interval.
+
+```{r}
+
+##add your code here
+#m2 <- glm(anydiarrhea ~ female + as.factor(Country_ID), family = binomial(link=log), data = wide) doesnt converge-->poisson with robust variance
+m2 <- glm(anydiarrhea ~ female + as.factor(Country_ID), family = poisson(link="log"), data = cross_section)
+summary(m2)
+
+#calculate robust variance since we are using the Poisson model to approximate log-binomial
+library(lmtest)
+library(sandwich)
+robust <-coeftest(m2, vcov = vcovHC(m2, type="HC1")) #calculate robust variance
+
+pr <- as.data.frame(cbind(exp(coef(robust)),exp(confint(robust))))
+#1.0805212 (0.64692001, 1.8047457) --> 1.09 (0.65, 1.80)
+```
+
+**ANSWER: In the cross-sectional study, after adjusting for site, the prevalence ratio of diarrhea among females compared to males is** **1.09 (0.65, 1.80).**
+
+### 2c. How does this estimate differ from your estimate in the full cohort study from the previous exercise (question 4)? Comment on magnitude (i.e., effect size) and precision (i.e., the width of the confidence intervals) in your answer.
+
+**ANSWER: This prevalence ratio (1.09) is slightly greater in magnitude/further from the null than that of the prevalence ratio in the full cohort study (1.01). This prevalence ratio's CIs (0.65, 1.80) are also less precise/wider than that of the full cohort study (0.95, 1.07).**
+
+## 2d. These two studies were nested within the cohort and used random sampling. Therefore, estimates from these studies should be unbiased. Give an example of how bias could occur in each of these designs if the studies were not nested in the cohort.
+
+**ANSWER: If not nested in the cohort, the case-control study could be biased if hospital controls are used as the controls (Berkson's bias). This would weaken the measure of association. Similarly, if not nested in the cohort, the cross-sectional study could be biased by the duration of disease. Longer episodes would lead to higher prevalence ratios and shorter episodes would lead to lower prevalence ratios. Recall bias could also be an issue in a cross-sectional study, in regards to remembering when diarrhea episodes began and/or number of episodes.**
+
+## We are now going to consider diarrhea as the exposure and estimate the effect of diarrhea on length-for-age z-score at 2 years of age (a marker of height) HINT: use the 'wide' dataset
+
+## 3. Using linear regression, estimate the association (mean difference) of diarrhea with length-for-age z-score adjusting for site with a 95% confidence interval \[3pts\]
+
+### 3a. Where, diarrhea burden is defined as the total number of episodes in the first 2 years of life and the effect is scaled per additional episode
+
+```{r}
+m3 <- glm(laz ~ totalepisodes + as.factor(Country_ID), family = gaussian, data = wide)
+summary(m3)
+
+totep <- as.data.frame(cbind(coef(m3),confint(m3)))
+#-0.02476134 (-0.04704733, -0.002475358) --> -0.02 (-0.05, -0.00)
+```
+
+**ANSWER: Adjusting for site, increased episodes of diarrhea in the first 2 year of life is associated with a -0.02 (-0.05, 0.00) mean difference length-for-age z-score (a reduction in this marker of height) for each additional episode.**
+
+### 3b. Where, diarrhea burden is defined as the longitudinal prevalence of diarrhea (days with diarrhea/days observed) over the first 2 years of life and the effect is scaled per 1% increase in prevalence
+
+#HINT: to scale the effects, multiply the outputted model effect and confidence interval limits by 0.01; alternatively you can divide the exposure variable by 0.01 before putting it in the model
+
+```{r}
+
+##add your code here
+m4 <- glm(laz ~ longprevalence + as.factor(Country_ID), family = gaussian, data = wide)
+summary(m4)
+
+longprev<- as.data.frame(cbind(coef(m4),confint(m4)))
+
+# -4.63160302 (-8.24066197, -1.0225441)
+-4.63160302*0.01
+-8.24066197*0.01
+-1.0225441*0.01
+#-0.04631603 (-0.08240662, -0.01022544) --> -0.05 (-0.08, -0.01)
+```
+
+**ANSWER: Adjusting for site, increased longitudinal prevalence of diarrhea in the first 2 years of life is associated with a -0.05 (-0.08, -0.01) mean difference length -for-age z-score (a reduction in this marker of height) per 1% increase in prevalence.**
+
+### 3c. Where, diarrhea burden is defined dichotomously comparing children that had a longitudinal prevalence of diarrhea (days with diarrhea/days observed) over the first 2 years of life \>5% compared to children with a longitudinal prevalence ≤ 5%
+
+#HINT: first create a dichotomous exposure variable, then put it in the model
+
+```{r}
+
+##add your code here
+wide$longprev5<-ifelse (wide$longprevalence > 0.05, 1, 0)
+m5 <- glm(laz ~ longprev5 + as.factor(Country_ID), family = gaussian, data = wide)
+summary(m5)
+
+longprev<- as.data.frame(cbind(coef(m5),confint(m5)))
+#-0.3967074 (-0.6574389, -0.1359759) --> -0.40 (-0.66, -0.14)
+```
+
+**ANSWER: Adjusting for site, when diarrhea burden is dichotomized, a longitudinal prevalence of diarrhea \>5% over the first 2 years of life is associated with a -0.40 (-0.66, -0.14)** **mean difference length -for-age z-score (a reduction in this marker of height).**
+
+### 3d. Why is the estimate from 3c so different from estimates 3a and 3b?
+
+**ANSWER: The estimate from 3c (-0.40 (-0.66, -0.14)) is greater in magnitude (further from the null) than that of 3a and 3b because dichotomizing the exposure (diarrhea burden) by a threshold of 5% groups very different cases together as exposed. A child with longitudinal prevalence just above 5% is put into the same exposure category as a child with a much higher longitudinal prevalence (for example pid 673 with a longitudinal prevalence of 0.23). Dichotomizing this continuous variable thus looses detail and over estimates the association. Similarly, this could be because the dichotomization leads to less people being considered a case (by requiring a longitudinal prevalence \>5%), which in turn results in these cases being more likely to have the outcome of stunted growth (this subset has higher prevalence of diarrhea). This inflates/overestimates the measure (mean difference).**

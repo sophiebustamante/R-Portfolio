@@ -1,0 +1,220 @@
+---
+title: "EPI 569 -- Exercise 3: Diagnostics and Seroepidemiology"
+author: "Ben Lopman, Liz Rogawski McQuade, Seth Zissette"
+format: html
+editor: visual
+widescreen: true
+smaller: true
+---
+
+```{r setup, include=FALSE, echo = FALSE, eval = TRUE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(kableExtra)
+library(ggplot2)
+```
+
+## Introduction
+
+### The datafile *India_RotaSerology_updated.csv* contains measurements on antibodies against rotavirus for children from birth to 18 years of age and measurements of virus detection at 36 months.
+
+```{r}
+sero <- data.frame(read.csv("https://raw.githubusercontent.com/blopman/epi569/master/India_RotaSerology_updated.csv"))
+```
+
+-   You have data on about 350 children.
+
+-   Blood was drawn at birth and at 36-monthly intervals (every 3 years)
+
+    -   Serum IgG and IgA was measured by EIA using serial dilutions.
+    -   Dilutions were 2-fold, with dilutions ranging from 1:10, 1:20; 1:40 to a maximum of 1:2560.
+
+-   Additionally, at 36 months, both an enzyme immunoassay (EIA) test and a polymerase chain reaction (PCR) test were used to detect rotavirus in the children's stool.
+
+    -   EIA results were recorded as positive (virus detected) or negative (virus not detected).
+    -   PCR results were recorded as cycle thresholds, i.e. the number of PCR cycles needed to detect rotavirus. Lower cycle thresholds indicate higher viral loads. The maximum number of cycles run was 40. If fewer than 40 cycles were recorded, rotavirus was detected by PCR; if 40 cycles were recorded, rotavirus was not detected.
+
+### Question 1 **(3pts)**
+
+-   What is the correct summary measure of antibody concentrations? State the value should be analyzed and the appropriate summary statistic. (Hint: see the lecture slides on "Quantifying antibodies")
+-   lots of dplyr and tidyverse
+
+### ANSWER: The summary measure of antibody concentrations is the titer, which is the highest diluation from a sample that detects an immune response (antibody activity). This should be analyzed on the log-scale. The appropriate summary statistic is the geometric mean of the titer, which is the antilog of the arithmetic mean of the log reciprocal dilutions. This value (geometric mean) should also be analyzed on the log-scale.
+
+-   Calculate this summary measure for IgG and IgA by age.
+
+### ANSWER: geometric means for IgG by age:
+
+|       |            |           |
+|-------|------------|-----------|
+| 1     | 0 months   | 1295.5800 |
+| **2** | 36 months  | 360.9609  |
+| **3** | 72 months  | 402.6517  |
+| **4** | 108 months | 640.0000  |
+| **5** | 144 months | 734.8807  |
+| **6** | 180 months | 975.4694  |
+| **7** | 216 months | 1132.2382 |
+
+### geometric means for IgA by age:
+
+|       |            |          |
+|:------|:-----------|:---------|
+| **1** | 0 months   | 1.00000  |
+| **2** | 36 months  | 11.51955 |
+| **3** | 72 months  | 14.15833 |
+| **4** | 108 months | 14.67389 |
+| **5** | 144 months | 22.19360 |
+| **6** | 180 months | 23.92391 |
+| **7** | 216 months | 34.25369 |
+
+```{r, echo = TRUE}
+# here's some code to summarise IgG by age
+gmt <- sero %>% 
+  group_by(Age_Month) %>% 
+  summarize(geo_mean_igg = 10^(mean(log10(IgG))))
+
+# edit code above (or write new code) to also summarize IgA by age
+amt <- sero %>% 
+  group_by(Age_Month) %>% 
+  summarize(geo_mean_iga = 10^(mean(log10(IgA))))
+```
+
+-   Describe in words the patterns of the IgG and IgA summary statistic over age.
+
+### ANSWER: IgG geometric means are highest (peaks) at 0 months, then they drop off and slowly rise again (though they don't get as high as 0 months) as age increases. This indicates they are maternal antibodies, as the peak is at 0 months. They increase again as age increases as babies either come into contact with the pathogen naturally or via vaccinations. Conversely, IgA geometric means are the lowest at 0 months and increase with age. The largest geometric mean for IgA is at 216 months, indicating these antibodies are not passed on from the mother, and instead are introduced to the baby naturally through interactions with its post-utero environment.
+
+-   Which antibody (IgG or IgA) would you use to estimate incidence (new infections)?
+
+### ANSWER: I would use IgA antibodies to estimate incidence as these antibodies are produced after an immune system comes into contact with the pathogen, ie after the baby has been infected. I would not use IgG because they were passed vertically from the mother, thus they don't give insight into new infections.
+
+### Question 2 **(2pts)**
+
+-   Next, convert the antibody data into two binary variables representing:
+    -   Protective antibodies: An IgA titer of \>= 90 units is considered to be protective against future disease.
+    -   Ever infected: An IgA titer of \>= 20 units indicates having ever been infected with rotavirus.
+    -   Note: for ease of analysis, the variables can be coded as 1 = positive (i.e. above threshold as defined above); 0 = negative (i.e. below threshold as defined above)
+
+```{r, echo = TRUE}
+# add your code here. use mutate function from tidyverse to create new variable 
+antibody<-sero %>%
+  mutate (ProtectiveAntibodies = ifelse (IgA >= 90, 1, 0),
+          EverInfected=ifelse (IgA >= 20, 1, 0))
+```
+
+-   What proportion of children have protective antibody levels at each age in months (0, 36,... 216m)? (summarize and groupby)
+-   What proportion of children at each age have ever had a rotavirus infection?
+
+### ANSWER: The proportion of children that have protective antibody levels at each age group is as follows:
+
+| **Age_Month** | **ProportionProtective** |
+|:--------------|:-------------------------|
+
+|     |           |
+|:----|:----------|
+| 0   | 0.0000000 |
+| 36  | 0.1114754 |
+| 72  | 0.1685393 |
+| 108 | 0.1729107 |
+| 144 | 0.2191011 |
+| 180 | 0.2592593 |
+| 216 | 0.3146067 |
+
+### the table above in words: at 0 months 0.00; at 36 months 0.11; at 72 months 0.17; at 108 months 0.17; at 144 months 0.22; at 180 months 0.26; at 216 months 0.31.
+
+### The proportion of children in age group that have ever had a rotavirus infection is as follows:
+
+| **Age_Month** | **ProportionInfected** |
+|:--------------|:-----------------------|
+
+|     |           |
+|:----|:----------|
+| 0   | 0.0000000 |
+| 36  | 0.3606557 |
+| 72  | 0.4859551 |
+| 108 | 0.5216138 |
+| 144 | 0.6264045 |
+| 180 | 0.6512346 |
+| 216 | 0.7191011 |
+
+### the table above in words: at 0 months 0.00; at 36 months 0.36; at 72 months 0.49; at 108 months 0.52; at 144 months 0.63; at 180 months 0.65; at 216 months 0.72.
+
+```{r}
+# add your code here; we suggest reporting the proportions requested above by each age group in a table format
+antibody2 <- antibody %>% 
+  group_by(Age_Month) %>% 
+  summarize(ProportionProtective= mean(ProtectiveAntibodies))
+
+antibody3<-antibody %>%
+  group_by(Age_Month) %>%
+  summarize(ProportionInfected=mean(EverInfected))
+```
+
+### Question 3 **(2pts)**
+
+-   Calculate R0, the basic reproduction number. Assume life expectancy is 68 years, average age of 1st infection is 5.5 years, and Type II mortality. See the lecture slides on calculating Ro from the average age of first infection in the "Analysis and modeling of serology data" lecture
+
+### ANSWER: R0=13.36
+
+```{r}
+# add your code here 
+#R0=1+(L/A)
+1+(68/5.5) 
+#13.36
+
+#HIT=1- 1/R0
+1-(1/13.36)
+#0.925-->92.5%
+```
+
+-   What is the herd immunity threshold for rotavirus in this population? (Hint: You may need to look back to previous lectures on Ro and the HIT.)
+
+### ANSWER: The HIT for rotavirus in this population is 0.925, meaning 92.5% of this population need to be protected from rotavirus in order to prevent an outbreak.
+
+-   Do you think that this is a reasonable level of coverage to be achieved? Put another way, can rotavirus be eradicated? Explain your reasoning.
+
+### ANSWER: I think it depends on the population and environment, as they may be hesitant of vaccines, and/or the environment could do a poor job at facilitating vaccine programs. However, I think this could be achieved if the rotavirus vaccine is mandated/required to be in child care centers and schools, and administered at check-ups, for example at 6 months. Additionally, making this vaccine the default at these appointments, meaning parents would have to opt-out rather than opt-in, could help achieve this goal of 92.5%. Mobile and free vaccination clinics/campaigns could also significantly help this effort. The vaccine would also need to be highly effective in order to provide protection from infection thus decreasing transmission. As immunity for rotavirus is not lifelong, people would need to get boosters as well. Thus, I do think it can be eradicated, but it will take a lot of work to get there.
+
+### Question 4 **(3pts)**
+
+-   At 36 months of age, calculate the mean numbers of cycle thresholds for PCR detection of rotavirus in this sample separately by EIA test status (i.e., the mean for those who test EIA negative and those who test EIA positive).
+
+### ANSWER: At 36 months, mean number of cycle threshold for PCR detection of negative EIA tests: 38.39; At 36 months, mean number of cycle threshold for PCR detection of positive EIA tests: 18.13
+
+| **EIA** | **CycleThreshold** |
+|:--------|:-------------------|
+
+|          |          |
+|:---------|:---------|
+| Negative | 38.38686 |
+| Positive | 18.12903 |
+
+```{r}
+# add your code here
+# HINT: similar to Q1, you will need the following functions: filter(), group_by(), summarise()
+data <- sero %>% filter(Age_Month==36) %>%
+  group_by(EIA) %>% 
+  summarize(CycleThreshold= mean(PCR_Ct, na.rm=TRUE))
+```
+
+-   Additionally, calculate the percentage of children who tested positive by EIA and by PCR (e.g., rotavirus detected at less than 40 cycles), respectively. Compare these two values. Explain any differences you see.
+
+### ANSWER: Percentage that tested positive by EIA: 10.16% ; Percentage that tested positive by PCR: 20.66% . This difference could be because PCRs have high sensitivity, and can detect pathogens that are not alive. Thus, the PCR test likely found a higher percentage of positive children as it detected those with low viral loads and antibodies. EIA tests have less ability to detect early infections, low viral load infections, and/or asymptomatic infections, which is why we see this difference.
+
+```{r}
+# add your code here
+# HINT: you will need to dichotomize PCR results into positive or negative
+table(sero$Age_Month) #305 obs of 36 months
+
+EIApositive<-sero %>% filter (Age_Month==36, !is.na(Age_Month)) %>%
+  summarize (PercentageEIA=sum(EIA=="Positive")/305 *100)
+print(EIApositive)
+#10.16%
+
+PCRpositive<-sero %>% filter (Age_Month==36, !is.na(PCR_Ct)) %>%
+  summarize (PercentagePCR=sum(PCR_Ct<40)/305 *100)
+#20.66%
+```
+
+-   Describe the differences between what is being detected by IgG/IgA levels and what is being detected by EIA/PCR.
+
+### ANSWER: IgG levels detect previous infection or immunity (caused by vaccination or maternal antibodies) by measuring the immune system response. IgA levels detect the antibodies produced by the immune system's response to a recent or current infection. EIA detects a piece of the rotavirus (antigen), ie a current infection, but could miss infections with low viral loads. PCR detects the pathogen nucleic acid (RNA) that's amplified over many cycles of the reaction, thus detecting emerging infections, infections that have low viral genetic material, and/or recent infections. Overall, IgG/IgA detect the immune system's response, while EIA/PCR detect the presence of the actual pathogen.

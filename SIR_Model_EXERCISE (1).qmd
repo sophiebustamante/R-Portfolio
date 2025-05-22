@@ -1,0 +1,353 @@
+---
+title: "EPI 569 -- Homework 2: Modeling a directly-transmitted pathogen"
+author: "Ben Lopman REPLACE WITH YOUR NAME HERE" 
+date written: "8/27/2020"
+date revised: "8/15/2024"
+format: html
+widescreen: true
+smaller: true
+self-contained: true
+---
+
+```{r, include=TRUE, echo = TRUE, warning=FALSE}
+library(kableExtra)
+library(deSolve)
+library(reshape2)
+library(ggplot2)
+```
+
+## Background 1
+
+-   A new pathogen has emerged in the Republic of Zubrowka. Here's what we know so far:
+    -   All individuals are initially susceptible and become infected by contact with an infected person
+    -   People are symptomatic infectious for a while and then become immune
+    -   Immunity eventually wanes.
+-   We can partition our population of size (N) into susceptible (S), infected (I), and immune (R) people. So, N = S + I + R. These are our state variables: S, I and R.
+-   Below, you will draw a diagram of the model and will also write out the model as a system of equations. To do that, we will also need the following information as parameters:
+    -   $\mu$ is the birth and death rate, maintaining constant population size;
+    -   $\omega$ is the rate at which immunity is lost;
+    -   $\sigma$ is the recovery rate, and
+    -   $\delta_t$ is the interval between successive calculations or time-step.
+    -   $\lambda$ is the force (or rate) of infection per susceptible person. Which is:
+        -   contact rate, $\alpha$, multiplied by
+        -   the probability of infection on contact with an infectious person $\beta$, multiplied by
+        -   the probability that a randomly encountered person is infectious, $\frac{I_{t-1}}{N}$.
+
+## Question 1 **(1pt)**
+
+-   Draw a flow diagram of this transmission process. Include all the state variables (i.e., compartments) and arrows illustrating the flows in and out of the states.
+-   You can insert the picture into your markdown file using the following code <!-- ![](filename.xyx) --> , or just upload as a separate file to Canvas when you turn in your work
+
+<!-- -->
+
+-   **ANSWER**
+
+```{r, echo = TRUE}
+
+#Add your figure here
+knitr::include_graphics("/Users/sophiabustamante/Downloads/SIRmodel.png")
+```
+
+## Question 2 **(1pt)**
+
+-   Now, write the model down as a system of **differential** equations. You may use the Equation editor in Word, markdown in R/quarto (see [here](https://rmd4sci.njtierney.com/math) for help) or another program of your choosing. You can also hand write and insert a picture.
+
+-   *Go through these equations to ensure that you understand what each term implies about the epidemiology of infection. You can also review the formulas in a[n Excel spreadsheet version of this model](https://github.com/blopman/epi569/blob/master/SIR_model_exercise.xlsx). Note that those are difference (not differential) equations*
+
+-   **ANSWER**
+
+    ```{r}
+    knitr::include_graphics("/Users/sophiabustamante/Downloads/SIRDiff.png")
+    ```
+
+## Background 2
+
+-   Before moving on, have a look at the Excel spreadsheet version of the model that uses difference equations. In that version, you can easily see what's going on the model. For the rest of the exercise, we'll be using an *R* version of the model (below, embedded in this script) that uses differential equations. Add the parameter values to the spreadsheet or *R* script. Use values that seem sensible to you. Remember to keep all in the same units (days). For now, set the waning rate $\omega$ to 0 (this mean that there is lifelong immunity) and the mortality rate $\mu$ to 0 (i.e. no births/ deaths/ migrations).
+
+-   *Conceptual note: In models with constant per capita rates, the time spent in a compartment is exponentially distributed, so the mean 'residence times' are reciprocals of the exit rates or vice versa. For example,* $\sigma$ is the reciprocal (i.e. 1/d) of the duration of illness.
+
+## Background 3 -- Model parameters
+
+-   You'll use the parameter values below for questions 4 and 6
+
+| Parameter                | Symbol   | Value |
+|--------------------------|----------|-------|
+| Daily contact rate       | $\alpha$ | 5.0   |
+| Transmission probability | $\beta$  | 0.1   |
+| Recovery rate            | $\sigma$ | 0.2   |
+| Loss of immunity rate    | $\omega$ | 0     |
+| Birth and death rate     | $\mu$    | 0     |
+
+## Question 3 **(1pt)**
+
+-   Another way to express the basic reproduction number is $R_{0}=\frac{\alpha \beta}{\mu +\sigma}$
+
+-   Explain this in words. *Hint: What are* $\alpha \beta$ and $\frac{1}{\mu +\sigma}$? Again, remember that the mortality rate ${\mu}$ is zero (so far).
+
+-   **ANSWER**
+
+-   **R0 represents the average number of new infections caused by 1 infected person. This number consists of the number of susceptible individuals an infected individual comes into contact with in 1 day (alpha) multiplied by the probability that the infected individual transmits the infection during contact (beta), divided by the number of people who are no longer susceptible (mu + sigma) (those who have died and those who have recovered or are immune). With a mortality rate of 0, this denominator is simplified to sigma. Thus, R0 is the number of new infections 1 infected individual can cause per day (alpha\*beta) divided by the un-susceptible population (mu+sigma).**
+
+## Question 4 **(1pt)**
+
+-   Calculate the basic reproductive number for your model.
+
+-   **ANSWER: R0=2.5**
+
+    ```{r}
+    (5.0*0.1)/(0+0.2)
+    ```
+
+## Question 5 **(1pt)**
+
+-   If the initial conditions are $S_{0}$ = 100, $I_{0}$ = 0, and $R_{0}$ = 0, what does this say about the composition of the population at t = 0?
+
+-   **ANSWER: At t=0, this disease appears to have not yet been introduced to this population. This is because the entire population is susceptible (S0=100), no one has been infected (I0=0), and there are no recovered/immune individuals (R0=0). The disease has not started to spread (yet), but with the whole population being susceptible (100 out of 100), I would be concerned for an outbreak.**
+
+## Background 4
+
+-   Here we have the model in R. It consists of:
+    -   parameters (*parms*),
+    -   initial conditions (*init*),
+    -   the model as ordinary differential equations (*sir_ode*).
+-   Then the model creates output (*sir_out*) and is graphed (*using ggplot*)
+
+```{r, echo = TRUE}
+# Define parameters -- THESE ARE THE MODEL PARAMETERS
+parms <- c(alpha =5,        # alpha = daily contacts
+           beta=0.1,        # beta = probability of infection on contact
+           sigma=0.2,       # sigma = rate of recovery per day
+           mu = 0.0,        # mu =  per capita birth and death rate
+           omega = 0.0)     # omega = rate of immune loss per day
+
+# Initial conditions --  THESE ARE THE CONDITIONS AT THE START OF THE SIMULATION
+init <- c(S=99,           # number initially susceptible
+          I=1,            # number initially infectious
+          R=0)            # initially immune or "recovered"
+
+# Define model equations -- do not change -- or change with care!
+# These are the model equations.  They are written as a function called sir_ode.  
+# "parms" and "init" input the parameters and inital conditions into the equations 
+sir_ode <- function(times,init,parms){
+  with(as.list(c(parms,init)), {
+    # ODEs
+    dS <- mu*(S+I+R) + omega*R -alpha*beta*I*S/(S+I+R) - mu*S 
+    dI <- alpha*beta*I*S/(S+I+R)-sigma*I - mu*I
+    dR <- sigma*I  - omega*R - mu*R
+    list(c(dS,dI,dR))
+  })
+}
+
+# This creates the output from model equations.  
+#If you want to run the model for longer, change the second term eg: seq(0,200,...)
+times <- seq(0,100,length.out=100)
+sir_out <- lsoda(init,times,sir_ode,parms)
+sir_out_long <- melt(as.data.frame(sir_out),"time")
+```
+
+```{r, echo = TRUE, fig.width = 4, fig.height = 3, fig.align = "center"}
+#Plotting the model output
+ggplot(sir_out_long,aes(x=time,y=value,colour=variable,group=variable))+
+  geom_line(lwd=2)+             #Add line
+  xlab("Time")+ylab("Number")   #Add labels
+```
+
+-   Now, introduce an infectious person by changing $I_{0}$ = 1 and the values from the parameter table above into the model below. Run the model to calculate the number of individuals in S, I, and R compartments from t=1 to t=100. To answer the following questions you can examine the model output in the data frame sir_out and the plot.
+
+## Question 6 **(1pt)**
+
+-   When does the epidemic peak? When does it end?
+
+-   Does everyone get eventually infected? If not, why? *Hint: Think about this in terms of the **effective** reproductive number* $R_{e}$?
+
+-   **ANSWER: When examing the data frame, the epidemic peaks at around time=16.16 days (number infected peaks at 23.72) and ends at around time=45 days (number infected drops to 0). Looking at the graph, it looks like it peaks at around day 15 and ends around day 45. No, not everyone gets infected, as the number of susceptible individuals (S) decreases. This means the population is not fully susceptible, thus fewer new infections occur. Additionally, not everyone who is susceptible automatically gets infected, due to things like randomness, behavior, biology, etc.**
+
+## Question 7 **(1pt)**
+
+-   Now, let's say that some resident of Zubrowka had returned from a neighboring country and had immunity from exposure there. Lower $S_{0}$ to reflect this, but keep the total population size, N, the same.
+
+    ```{r, echo = TRUE}
+    parms <- c(alpha =5,        # alpha = daily contacts
+               beta=0.1,        # beta = probability of infection on contact
+               sigma=0.2,       # sigma = rate of recovery per day
+               mu = 0.0,        # mu =  per capita birth and death rate
+               omega = 0.0)     # omega = rate of immune loss per day
+
+    # Initial conditions --  THESE ARE THE CONDITIONS AT THE START OF THE SIMULATION
+    init <- c(S=60,           # number initially susceptible
+              I=1,            # number initially infectious
+              R=39)            # initially immune or "recovered"
+
+    # Define model equations -- do not change -- or change with care!
+    # These are the model equations.  They are written as a function called sir_ode.  
+    # "parms" and "init" input the parameters and inital conditions into the equations 
+    sir_ode <- function(times,init,parms){
+      with(as.list(c(parms,init)), {
+        # ODEs
+        dS <- mu*(S+I+R) + omega*R -alpha*beta*I*S/(S+I+R) - mu*S 
+        dI <- alpha*beta*I*S/(S+I+R)-sigma*I - mu*I
+        dR <- sigma*I  - omega*R - mu*R
+        list(c(dS,dI,dR))
+      })
+    }
+
+    # This creates the output from model equations.  
+    #If you want to run the model for longer, change the second term eg: seq(0,200,...)
+    times <- seq(0,100,length.out=100)
+    sir_out <- lsoda(init,times,sir_ode,parms)
+    sir_out_long <- melt(as.data.frame(sir_out),"time")
+    ```
+
+    ```{r, echo = TRUE, fig.width = 4, fig.height = 3, fig.align = "center"}
+    #Plotting the model output
+    ggplot(sir_out_long,aes(x=time,y=value,colour=variable,group=variable))+
+      geom_line(lwd=2)+             #Add line
+      xlab("Time")+ylab("Number")   #Add labels
+    ```
+
+-   Is there a threshold at which an epidemic does not occur? If so, what is it and why? You can solve this mathematically (i.e., analytically) but also try it out in the model.
+
+    -   *Hint: Again, consider the effective reproductive number,* $R_{e}$
+
+-   **ANSWER: The threshold that needs to be met in order for an epidemic not to occur is the epidemic threshold. This threshold is met when Re**≤**1. The fraction of susceptible's in the population must be lower than 1/R0 to stop transmission. Given Re=R0\*s, with an R0 of 2.5 (calculated in #4), we would need the population to have less than or equal to 40% susceptibles. In this example with N=100, we would need less than or equal to 40 susceptible people in the population. When the model's susceptibile parameter is changed to 60 and recovered parameter to 39 for example, transmission isn't sustained generation after generation, thus not triggering an epidemic.**
+
+## Question 8 **(1pt)**
+
+-   Set the parameters back to the original values and now add some **simple demography**. Assume that people are entering and leaving the population in a balanced death and birth rate.
+
+-   Set the birth and death rate, $\mu$, to 0.1 per day. Also try other values. What happens now? How does changing the birth/death rate, $\mu$, affect $R_{0}$? How does it affect the equilibrium and why?
+
+```{r, echo = TRUE}
+# Define parameters -- THESE ARE THE MODEL PARAMETERS
+parms <- c(alpha =5,        # alpha = daily contacts
+           beta=0.1,        # beta = probability of infection on contact
+           sigma=0.2,       # sigma = rate of recovery per day
+           mu = 0.2,        # mu =  per capita birth and death rate
+           omega = 0.0)     # omega = rate of immune loss per day
+
+# Initial conditions --  THESE ARE THE CONDITIONS AT THE START OF THE SIMULATION
+init <- c(S=99,           # number initially susceptible
+          I=1,            # number initially infectious
+          R=0)            # initially immune or "recovered"
+
+# Define model equations -- do not change -- or change with care!
+# These are the model equations.  They are written as a function called sir_ode.  
+# "parms" and "init" input the parameters and initial conditions into the equations 
+sir_ode <- function(times,init,parms){
+  with(as.list(c(parms,init)), {
+    # ODEs
+    dS <- mu*(S+I+R) + omega*R -alpha*beta*I*S/(S+I+R) - mu*S 
+    dI <- alpha*beta*I*S/(S+I+R)-sigma*I - mu*I
+    dR <- sigma*I  - omega*R - mu*R
+    list(c(dS,dI,dR))
+  })
+}
+
+# This creates the output from model equations.  
+#If you want to run the model for longer, change the second term eg: seq(0,200,...)
+times <- seq(0,100,length.out=101)
+sir_out <- lsoda(init,times,sir_ode,parms)
+sir_out_long <- melt(as.data.frame(sir_out),"time")
+```
+
+```{r, echo = TRUE, fig.width = 4, fig.height = 3, fig.align = "center"}
+#Plotting the model output
+ggplot(sir_out_long,aes(x=time,y=value,colour=variable,group=variable))+
+  geom_line(lwd=2)+             #Add line
+  xlab("Time")+ylab("Number")   #Add labels
+```
+
+-   **ANSWER: With mu=0, equilibrium is reached between 45 & 50 days, with S=\~10, I=\~0, and R= \~87. Changing mu to 0.1 makes the equilibrium occur later, at around day 60, with S=\~60, I=\~12, and R= \~26. As R0=(alpha\*beta)/(mu+sigma), increasing mu (the birth and death rate) increases the denominator, thus making R0 smaller. Although there are new susceptibles (due to births), the disease is less effective in its spread because R0 has been reduced. When mu=0.2, equilibirum is met around day 60, with S=\~80, I=\~12, and R=\~12. Again, this occurs because the disease is not capable of wide spread transmission with a lower R0 (reduced due to a larger denominator). The calculations below also demonstrate how R0 decreases as mu increases.**
+
+    ```{r}
+    #R0 with mu=0.0: 2.5
+
+    (5*0.1)/(0.1+0.2)
+    #R0 with mu=0.1: 1.67
+
+    (5*0.1)/(0.2+0.2)
+    #R0 with mu=0.2: 1.25
+
+    (5*0.1)/(0.3+0.2)
+    #R0 with mu=0.3: 1
+
+    (5*0.1)/(0.4+0.2)
+    #R0 with mu=0.4: 0.83
+
+
+
+
+    ```
+
+## Question 9 **(1pt)**
+
+-   Now, we will also allow immunity to wane by changing $\omega$ to a value greater than 0.
+
+-   Choose parameter values that keep $R_{0}$ bigger than 1 (e.g. $\omega$ = 0.05/day). How does adding this extra process affect the dynamics?
+
+-   *Hint: You may wish to increase the span of simulation by changing this line of code in the model code below:*
+
+    -   times \<- seq(0,100,length.out=100) by replacing *100* with *500* days
+
+```{r, echo = TRUE}
+# Define parameters -- THESE ARE THE MODEL PARAMETERS
+parms <- c(alpha =5,        # alpha = daily contacts
+           beta=0.1,        # beta = probability of infection on contact
+           sigma=0.2,       # sigma = rate of recovery per day
+           mu = 0.0,        # mu =  per capita birth and death rate
+           omega = 0.05)     # omega = rate of immune loss per day
+
+# Initial conditions --  THESE ARE THE CONDITIONS AT THE START OF THE SIMULATION
+init <- c(S=99,           # number initially susceptible
+          I=1,            # number initially infectious
+          R=0)            # initially immune or "recovered"
+
+# Define model equations -- do not change -- or change with care!
+# These are the model equations.  They are written as a function called sir_ode.  
+# "parms" and "init" input the parameters and initial conditions into the equations 
+sir_ode <- function(times,init,parms){
+  with(as.list(c(parms,init)), {
+    # ODEs
+    dS <- mu*(S+I+R) + omega*R -alpha*beta*I*S/(S+I+R) - mu*S 
+    dI <- alpha*beta*I*S/(S+I+R)-sigma*I - mu*I
+    dR <- sigma*I  - omega*R - mu*R
+    list(c(dS,dI,dR))
+  })
+}
+
+# This creates the output from model equations.  
+#If you want to run the model for longer, change the second term eg: seq(0,200,...)
+times <- seq(0,500,length.out=500)
+sir_out <- lsoda(init,times,sir_ode,parms)
+sir_out_long <- melt(as.data.frame(sir_out),"time")
+```
+
+```{r, echo = TRUE, fig.width = 4, fig.height = 3, fig.align = "center"}
+#Plotting the model output
+
+ggplot(sir_out_long,aes(x=time,y=value,colour=variable,group=variable))+
+  geom_line(lwd=2)+             #Add line
+  xlab("Time")+ylab("Number")   #Add labels
+```
+
+-   **ANSWER: As an omega value greater than 0 makes R0 bigger than 1, the number of susceptible individuals is greater than when omega is 0. When omega=0, equilibrium is met around time=50 days, with S=\~10, I= \~0, and R= \~88. When omega=0.05, equilibrium is met later, at around time=100 days, with S=\~40, I= \~12.5, and R= \~49). Loss of immunity means that people eventually leave the recovered compartment and rejoin the susceptible compartment, thus increasing the number of susceptibles in the population. As such, there are fewer recovered individuals as people's immunity wanes at a rate of 0.05/day. There are thus more infectious individuals at equilibrium with omega=0.05 compared to omega=0. This disease becomes endemic, as there is a constant stream of susceptibles and thus continued transmission.**
+
+## Question 10 **(1pt)**
+
+-   $R_{e}$ is defined as the average number of secondary infections produced by an infectious person at any given time *e*. What is the value of $R_{e}$ when the infection has attained the endemic equilibrium? How does the duration of immunity affect $R_{e}$? What does this mean? (0.5pt)
+
+-   **ANSWER: When the infection has attained the endemic equilibrium, Re**≤**1. The duration of immunity affects how quickly individuals become susceptible again. When immunity wanes quickly/duration of immunity is brief, infection will be sustained at a higher endemic level. Conversely, when immunity wanes slowly/duration of immunity lasts a while, infection will be sustained at a lower endemic level. While this affects the amount of infectious and susceptible individuals, Re remains 1. Duration of immunity affects the endemic level of infectious and susceptible populations at equilibrium.**
+
+## Extensions
+
+-   The model(s) you have used so far in this exercise, even though simple, captures quite well many observed patterns of infections in human populations. Still, models can be extended to include a variety of complexities.
+-   Consider how you would model interventions in this model, such as:
+    -   social distancing?
+    -   vaccination?
+    -   demographic dynamics (i.e. when birth is different that death rate)?
+    -   an infection with a carrier state?
+
+## Extra credit **(0.5pt)**
+
+-   Which of these complexities can be incorporated into the model without structural changes to the model. In other words, what can we incorporate by changing parameter values only and not changing the equations?
+-   **ANSWER: I think we can incorporate social distancing and vaccination (alpha and beta, respectively) without causing structural changes. Social distancing should decrease the number of daily contacts (alpha), and vaccination should decrease the probability of infection on contact (beta) and decrease the number of susceptible individuals as they move to the recovered compartment. I think different birth and death rates would alter the equations (structural change), as they would have to be separate variables, as opposed to one variable (mu) that represents both. I think adding a carrier state would also change the model's structure, as a new variable/compartment would need to be added to reflect this, such as the Exposed compartment in the SEIR model, as they are not yet infectious and/or asymptomatic.**
