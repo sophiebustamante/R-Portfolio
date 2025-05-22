@@ -69,7 +69,7 @@ wide <- left_join(b,a) #one obs per personID
 
 ```
 
-## We are going to create a nested case-control study from the MAL-ED study with 50 cases and 50 controls. Cases are sampled from all children with at least one diarrhea episode. Controls are sampled from all children with no diarrhea episodes. Individuals in the study are included in the 'casecontrol' dataset. (what kind of measure and model appropriate for nested case-control)
+##create a nested case-control study from the MAL-ED study with 50 cases and 50 controls. Cases are sampled from all children with at least one diarrhea episode. Controls are sampled from all children with no diarrhea episodes. Individuals in the study are included in the 'casecontrol' dataset. (what kind of measure and model appropriate for nested case-control)
 
 ```{r}
 
@@ -100,7 +100,7 @@ casecontrol <- rbind(selectedcases,selectedcontrols)
 ### 1b. Use logistic regression to calculate the estimate of the measure of effect with a 95% confidence interval.
 
 ```{r}
-#add your code here
+#code here
 m1<-glm(anydiarrhea~ female + as.factor(Country_ID), family=binomial(link="logit"), 
         data=casecontrol)
 summary(m1)
@@ -115,7 +115,7 @@ irr <- as.data.frame(cbind(exp(coef(m1)),exp(confint(m1))))
 
 **ANSWER: This prevalence odds ratio (1.22) is greater in magnitude/further from the null than the prevalence odds ratio in the full cohort study (1.09). This prevalence odds ratio's CIs (0.53, 2.82) are less precise than that of the full cohort study (0.62, 1.90).**
 
-## We are now going to create a nested cross-sectional study from the MAL-ED study. For this study, at 12 months of age, we will measure diarrhea prevalence in the prior week among all enrolled children (variable name: 'anydiarrhea'). Individuals in the study are included in the 'cross_section' dataset.
+##now going to create a nested cross-sectional study from the MAL-ED study. For this study, at 12 months of age, we will measure diarrhea prevalence in the prior week among all enrolled children (variable name: 'anydiarrhea'). Individuals in the study are included in the 'cross_section' dataset.
 
 ```{r}
 #subset data to the week prior to 12 months of age
@@ -140,7 +140,7 @@ cross_section <- a %>%
 
 ```{r}
 
-##add your code here
+##code here
 #m2 <- glm(anydiarrhea ~ female + as.factor(Country_ID), family = binomial(link=log), data = wide) doesnt converge-->poisson with robust variance
 m2 <- glm(anydiarrhea ~ female + as.factor(Country_ID), family = poisson(link="log"), data = cross_section)
 summary(m2)
@@ -164,7 +164,7 @@ pr <- as.data.frame(cbind(exp(coef(robust)),exp(confint(robust))))
 
 **ANSWER: If not nested in the cohort, the case-control study could be biased if hospital controls are used as the controls (Berkson's bias). This would weaken the measure of association. Similarly, if not nested in the cohort, the cross-sectional study could be biased by the duration of disease. Longer episodes would lead to higher prevalence ratios and shorter episodes would lead to lower prevalence ratios. Recall bias could also be an issue in a cross-sectional study, in regards to remembering when diarrhea episodes began and/or number of episodes.**
 
-## We are now going to consider diarrhea as the exposure and estimate the effect of diarrhea on length-for-age z-score at 2 years of age (a marker of height) HINT: use the 'wide' dataset
+##now going to consider diarrhea as the exposure and estimate the effect of diarrhea on length-for-age z-score at 2 years of age (a marker of height) HINT: use the 'wide' dataset
 
 ## 3. Using linear regression, estimate the association (mean difference) of diarrhea with length-for-age z-score adjusting for site with a 95% confidence interval \[3pts\]
 
@@ -182,11 +182,11 @@ totep <- as.data.frame(cbind(coef(m3),confint(m3)))
 
 ### 3b. Where, diarrhea burden is defined as the longitudinal prevalence of diarrhea (days with diarrhea/days observed) over the first 2 years of life and the effect is scaled per 1% increase in prevalence
 
-#HINT: to scale the effects, multiply the outputted model effect and confidence interval limits by 0.01; alternatively you can divide the exposure variable by 0.01 before putting it in the model
+# to scale the effects, multiply the outputted model effect and confidence interval limits by 0.01; alternatively you can divide the exposure variable by 0.01 before putting it in the model
 
 ```{r}
 
-##add your code here
+##code here
 m4 <- glm(laz ~ longprevalence + as.factor(Country_ID), family = gaussian, data = wide)
 summary(m4)
 
@@ -203,11 +203,11 @@ longprev<- as.data.frame(cbind(coef(m4),confint(m4)))
 
 ### 3c. Where, diarrhea burden is defined dichotomously comparing children that had a longitudinal prevalence of diarrhea (days with diarrhea/days observed) over the first 2 years of life \>5% compared to children with a longitudinal prevalence ≤ 5%
 
-#HINT: first create a dichotomous exposure variable, then put it in the model
+#first create a dichotomous exposure variable, then put it in the model
 
 ```{r}
 
-##add your code here
+##code here
 wide$longprev5<-ifelse (wide$longprevalence > 0.05, 1, 0)
 m5 <- glm(laz ~ longprev5 + as.factor(Country_ID), family = gaussian, data = wide)
 summary(m5)
